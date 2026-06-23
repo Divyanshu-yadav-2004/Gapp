@@ -1,0 +1,91 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum ApplicationStatus {
+  PENDING_VERIFICATION
+  PROCESSING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  role         Role     @default(STAFF)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  refreshTokens RefreshToken[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Application {
+  id                 String            @id
+  service            String
+  serviceName        String
+  customerName       String
+  customerPhone      String
+  customerEmail      String
+  details            Json
+  documents          Json
+  amountPaid         Int               // In Rupees (or Paise, let's keep it in Rupees to align with fee in db.js)
+  paymentStatus      String            @default("Pending") // "Pending", "Paid", "Inquiry", "Failed"
+  status             ApplicationStatus @default(PENDING_VERIFICATION)
+  statusComment      String?           @default("")
+  certificateNumber  String?           @default("")
+  completionTimeline String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  payments           Payment[]
+  statusHistories    StatusHistory[]
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  applicationId   String
+  application     Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  transactionId   String?       @unique // Received from payment gateway after completion
+  orderId         String        @unique // Sent to/Generated for payment gateway
+  amount          Int           // Amount in rupees
+  status          PaymentStatus @default(PENDING)
+  paymentMethod   String?       // "upi", "card", etc.
+  gatewayResponse Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model StatusHistory {
+  id            String            @id @default(uuid())
+  applicationId String
+  application   Application       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  oldStatus     ApplicationStatus
+  newStatus     ApplicationStatus
+  changedBy     String            // User email or ID who made the change
+  comment       String?
+  createdAt     DateTime          @default(now())
+}
