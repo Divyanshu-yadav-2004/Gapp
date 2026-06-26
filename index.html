@@ -14,6 +14,73 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         SPLASH SCREEN — EasyCafe Premium Launch Animation
+    ═══════════════════════════════════════════════════════════ -->
+    <div id="splash-screen" class="splash-screen" aria-hidden="true" role="presentation">
+
+        <!-- Animated mesh gradient background -->
+        <div class="splash-bg">
+            <div class="splash-orb splash-orb-1"></div>
+            <div class="splash-orb splash-orb-2"></div>
+            <div class="splash-orb splash-orb-3"></div>
+            <div class="splash-grid"></div>
+        </div>
+
+        <!-- Floating particles -->
+        <div class="splash-particles" id="splash-particles"></div>
+
+        <!-- Main content -->
+        <div class="splash-content">
+
+            <!-- Outer shimmer ring -->
+            <div class="splash-ring-outer">
+                <div class="splash-ring-inner">
+
+                    <!-- Logo icon -->
+                    <div class="splash-logo-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24"
+                             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round" class="splash-svg-icon">
+                            <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3z"/>
+                        </svg>
+                        <!-- Shine sweep -->
+                        <div class="splash-icon-shine"></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Brand name -->
+            <div class="splash-brand">
+                <span class="splash-brand-easy">Easy</span><span class="splash-brand-cafe">Cafe</span>
+            </div>
+
+            <!-- Tagline with letter-by-letter reveal -->
+            <p class="splash-tagline">Smart Cyber Assistant</p>
+
+            <!-- Animated dots loader -->
+            <div class="splash-dots">
+                <span class="splash-dot"></span>
+                <span class="splash-dot"></span>
+                <span class="splash-dot"></span>
+            </div>
+
+            <!-- Ultra-thin progress bar -->
+            <div class="splash-progress-track">
+                <div class="splash-progress-bar" id="splash-progress-bar"></div>
+            </div>
+
+        </div>
+
+        <!-- Bottom badge -->
+        <div class="splash-footer">
+            <span>Powered by <strong>EasyCafe</strong> &nbsp;·&nbsp; v2.0</span>
+        </div>
+
+    </div>
+    <!-- ═══════════════ END SPLASH SCREEN ═══════════════ -->
     <!-- Main Header -->
     <header class="app-header">
         <div class="header-container">
@@ -50,7 +117,10 @@
         <section id="customer-landing" class="view-section active">
             <div class="hero-section">
                 <div class="hero-content">
-                    <span class="badge">Skip the Cyber Cafe Lines!</span>
+                    <div class="welcome-greeting-badge" id="welcome-greeting-badge">
+                        <span class="welcome-glow-dot"></span>
+                        <span id="welcome-text-badge">Welcome to EasyCafe</span>
+                    </div>
                     <h2>Apply for Gov Services & Cards <span>From Home</span></h2>
                     <p>Fill form details, securely upload documents, and complete payment. Our expert cyber cafe operators will process and submit your files immediately.</p>
                 </div>
@@ -886,6 +956,7 @@
 
     <!-- Scripts -->
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="splash.js"></script>
     <script src="api.js"></script>
     <script src="db.js"></script>
     <script src="app.js"></script>
