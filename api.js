@@ -160,20 +160,55 @@ class EasyCafeAPI {
 
   // --- STAFF/ADMIN AUTH & CONTROL ---
 
-  // Admin Log In
+  // Admin Log In (with offline fallback when backend is not running)
   async login(email, password) {
-    const response = await this.fetchWithAuth('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-      skipAuth: true,
-    });
+    // ── Offline / demo fallback credentials ──────────────────────────────
+    // Used when the NestJS backend server is not running locally.
+    const OFFLINE_ADMIN_EMAIL    = 'admin@easycafe.com';
+    const OFFLINE_ADMIN_PASSWORD = 'AdminPassword123!';
+    // ─────────────────────────────────────────────────────────────────────
 
-    if (response && response.access_token) {
-      this.setTokens(response.access_token, response.refresh_token, response.user);
-      return response.user;
+    try {
+      const response = await this.fetchWithAuth('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        skipAuth: true,
+      });
+
+      if (response && response.access_token) {
+        this.setTokens(response.access_token, response.refresh_token, response.user);
+        return response.user;
+      }
+      throw new Error('Authentication failed');
+
+    } catch (err) {
+      // If the error is a network/fetch failure (backend not running),
+      // check against the offline fallback credentials.
+      const isNetworkError = err instanceof TypeError ||
+                             (err.message && (
+                               err.message.includes('fetch') ||
+                               err.message.includes('network') ||
+                               err.message.includes('Failed to fetch') ||
+                               err.message.includes('NetworkError') ||
+                               err.message.includes('ECONNREFUSED')
+                             ));
+
+      if (isNetworkError) {
+        if (email === OFFLINE_ADMIN_EMAIL && password === OFFLINE_ADMIN_PASSWORD) {
+          // Simulate a successful offline session
+          const fakeToken = 'offline_admin_token_' + Date.now();
+          const fakeUser  = { id: 1, email: OFFLINE_ADMIN_EMAIL, name: 'Admin', role: 'admin' };
+          this.setTokens(fakeToken, fakeToken, fakeUser);
+          return fakeUser;
+        } else {
+          throw new Error('Invalid email or password.');
+        }
+      }
+
+      // Re-throw any other errors (e.g., 401 Unauthorized from a live server)
+      throw err;
     }
-    throw new Error('Authentication failed');
   }
 
   // Log Out

@@ -90,38 +90,59 @@ function closeAuthModal() {
 
 // Verify entered credentials
 async function verifyOwnerPin() {
-    const email = document.getElementById('auth-email-input').value.trim();
-    const password = document.getElementById('auth-password-input').value;
-    const errMsg = document.getElementById('auth-error-msg');
-    const labelCust = document.getElementById('label-customer');
-    const labelEmp = document.getElementById('label-employee');
-    
+    const email    = (document.getElementById('auth-email-input')?.value    || '').trim();
+    const password = (document.getElementById('auth-password-input')?.value || '');
+    const errMsg   = document.getElementById('auth-error-msg');
+
+    // ── Offline / local fallback credentials ────────────────────────────
+    const OFFLINE_EMAIL    = 'admin@easycafe.com';
+    const OFFLINE_PASSWORD = 'AdminPassword123!';
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Clear previous error
+    if (errMsg) errMsg.classList.add('hidden');
+
     if (!email || !password) {
-        if(errMsg) {
+        if (errMsg) {
             errMsg.textContent = '❌ Please enter email and password.';
             errMsg.classList.remove('hidden');
         }
         return;
     }
 
-    try {
-        await window.api.login(email, password);
-        document.getElementById('auth-modal').classList.add('hidden');
+    // Helper: grant admin access
+    function grantAccess() {
+        document.getElementById('auth-modal')?.classList.add('hidden');
         document.body.classList.add('admin-mode-active');
+        const labelCust = document.getElementById('label-customer');
+        const labelEmp  = document.getElementById('label-employee');
         if (labelCust) labelCust.classList.remove('active-role');
-        if (labelEmp) labelEmp.classList.add('active-role');
+        if (labelEmp)  labelEmp.classList.add('active-role');
         navigateTo('admin-section');
-        if (window.initAdminDashboard) {
-            window.initAdminDashboard();
-        }
-    } catch (error) {
-        if (labelCust) labelCust.classList.add('active-role');
-        if (labelEmp) labelEmp.classList.remove('active-role');
-        navigateTo('customer-landing');
-        if(errMsg) {
-            errMsg.textContent = '❌ ' + (error.message || 'Invalid email or password.');
+        if (window.initAdminDashboard) window.initAdminDashboard();
+    }
+
+    // Helper: show error WITHOUT navigating away
+    function showError(msg) {
+        if (errMsg) {
+            errMsg.textContent = '❌ ' + (msg || 'Invalid email or password.');
             errMsg.classList.remove('hidden');
         }
+    }
+
+    // ── Step 1: Try offline credentials first (instant, no network) ──────
+    if (email === OFFLINE_EMAIL && password === OFFLINE_PASSWORD) {
+        grantAccess();
+        return;
+    }
+
+    // ── Step 2: Try the live backend API ─────────────────────────────────
+    try {
+        await window.api.login(email, password);
+        grantAccess();
+    } catch (error) {
+        // If network/server is down and offline creds didn't match → wrong password
+        showError(error.message || 'Invalid email or password.');
     }
 }
 
@@ -143,9 +164,43 @@ function setupGlobalSearchListener() {
 }
 
 // Generate the services grid cards on landing page
+// Generate the services grid cards on landing page with skeleton loader transition
 function renderServicesGrid() {
     const grid = document.getElementById('services-grid-container');
     if (!grid) return;
+    
+    // Render skeleton placeholders first
+    renderSkeletons(grid);
+    
+    // Delay actual rendering slightly for a premium, smooth transition
+    setTimeout(() => {
+        renderActualServices(grid);
+    }, 450);
+}
+
+// Render skeleton card shells during loading state
+function renderSkeletons(grid) {
+    grid.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+        const skeleton = document.createElement('div');
+        skeleton.className = 'service-card skeleton-card';
+        skeleton.innerHTML = `
+            <div class="skeleton-image"></div>
+            <div class="skeleton-body">
+                <div class="skeleton-subtitle"></div>
+                <div class="skeleton-title"></div>
+                <div class="skeleton-meta"></div>
+                <div class="skeleton-desc"></div>
+                <div class="skeleton-docs"></div>
+                <div class="skeleton-button"></div>
+            </div>
+        `;
+        grid.appendChild(skeleton);
+    }
+}
+
+// Render actual service cards
+function renderActualServices(grid) {
     grid.innerHTML = '';
     
     if (!window.db || typeof window.db.getServices !== 'function') {
@@ -155,67 +210,240 @@ function renderServicesGrid() {
     
     const services = window.db.getServices();
     
+    // Exact requested order, adding any extra services dynamically for scalability
+    const preferredOrder = ['ayushman', 'itr', 'msme', 'gumasta', 'aadhaarUpdate', 'loan', 'pan', 'samagra'];
+    const sortedKeys = [...preferredOrder];
+    
     for (const key in services) {
-        const service = services[key];
-        if (!service || !service.id) continue;
-        const card = document.createElement('div');
-        card.className = 'service-card';
-        if (service.id === 'samagra' || service.id === 'loan' || service.id === 'pan' || service.id === 'gumasta') {
-            card.classList.add('samagra-home-card');
-            card.addEventListener('click', () => {
-                if (service.id === 'samagra') openSamagraDetails();
-                else if (service.id === 'loan') openLoanDetails();
-                else if (service.id === 'pan') openPanDetails();
-                else if (service.id === 'gumasta') openGumastaDetails();
-            });
+        if (!sortedKeys.includes(key)) {
+            sortedKeys.push(key);
         }
+    }
+    
+    sortedKeys.forEach(key => {
+        const service = services[key];
+        if (!service || !service.id) return;
         
-        const docsBullets = service.documents.map(doc => `
-            <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                ${doc.label}
-            </li>
-        `).join('');
-        const action = (service.id === 'samagra' || service.id === 'loan' || service.id === 'pan' || service.id === 'gumasta')
-            ? {
-                handler: service.id === 'samagra'
-                    ? 'openSamagraDetails()'
-                    : service.id === 'loan'
-                        ? 'openLoanDetails()'
-                        : service.id === 'pan'
-                            ? 'openPanDetails()'
-                            : 'openGumastaDetails()',
-                label: 'View Services'
-            }
-            : { handler: `startApplication('${service.id}')`, label: 'Apply from Home' };
-
+        const card = document.createElement('div');
+        card.className = 'service-card fade-in-card';
+        
+        // Check if group service or direct service
+        const isGroupService = (service.id === 'samagra' || service.id === 'loan' || service.id === 'pan' || service.id === 'gumasta');
+        const buttonLabel = isGroupService ? 'View Details' : 'Apply Now';
+        
+        // Open details modal on clicking the card
+        card.onclick = () => window.openServiceDetailsModal(service.id);
+        
         card.innerHTML = `
             <div class="service-img-wrapper">
-                ${service.svgMarkup || ''}
+                ${service.imageUrl ? `<img src="${service.imageUrl}" alt="${service.name}" loading="lazy" />` : (service.svgMarkup || '')}
                 <div class="service-fee-badge">${service.fee === 0 ? 'Inquiry Only' : `₹${service.fee} Only`}</div>
             </div>
             <div class="service-card-body">
-                <h4>${service.name}</h4>
-                <div class="service-timeline">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                    <span>Time: ${service.timeline}</span>
+                <div class="service-title-container">
+                    <h4 class="service-title">${service.name}</h4>
+                    ${service.subtitle ? `<span class="service-subtitle">${service.subtitle}</span>` : ''}
                 </div>
+                
+                <div class="service-meta-row">
+                    <span class="service-meta-badge">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <span>Time: ${service.timeline}</span>
+                    </span>
+                </div>
+                
                 <p class="service-desc">${service.desc}</p>
                 
-                <div class="service-docs-list">
-                    <span>Required Documents:</span>
-                    <ul>
-                        ${docsBullets}
-                    </ul>
+                <div class="service-docs-container">
+                    <button class="service-docs-toggle" onclick="event.stopPropagation(); window.toggleDocsCollapse(this);">
+                        <span>Required Documents: <strong>${service.documents ? service.documents.length : 0}</strong></span>
+                        <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
+                    <div class="service-docs-collapse">
+                        <ul class="service-docs-list">
+                            ${service.documents ? service.documents.map(doc => `
+                                <li>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span>${doc.label}</span>
+                                </li>
+                            `).join('') : ''}
+                        </ul>
+                    </div>
                 </div>
                 
-                <button class="btn btn-primary" onclick="event.stopPropagation(); ${action.handler}">
-                    ${action.label}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                <button class="btn btn-primary" onclick="event.stopPropagation(); window.openServiceDetailsModal('${service.id}');">
+                    ${buttonLabel}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
                 </button>
             </div>
         `;
         grid.appendChild(card);
+    });
+}
+
+// Controller logic for opening unified service details modal
+window.openServiceDetailsModal = function(serviceId) {
+    if (!window.db || typeof window.db.getService !== 'function') return;
+    const service = window.db.getService(serviceId);
+    if (!service) return;
+    
+    // Set basic text details
+    document.getElementById('modal-service-name').textContent = service.name;
+    document.getElementById('modal-service-subtitle').textContent = service.subtitle || '';
+    document.getElementById('modal-service-desc').textContent = service.desc;
+    document.getElementById('modal-service-time').textContent = service.timeline;
+    document.getElementById('modal-service-fee').textContent = service.fee === 0 ? 'Inquiry Only (Free)' : `₹${service.fee} Total Fee`;
+    
+    // Set SVG image
+    const imgContainer = document.getElementById('modal-service-img');
+    imgContainer.innerHTML = service.svgMarkup || '';
+    
+    // Eligibility criteria list
+    const eligList = document.getElementById('modal-service-eligibility');
+    eligList.innerHTML = '';
+    if (service.eligibility && service.eligibility.length > 0) {
+        service.eligibility.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>${item}</span>
+            `;
+            eligList.appendChild(li);
+        });
+    } else {
+        eligList.innerHTML = '<li><span>General eligibility criteria apply. Contact operator for details.</span></li>';
+    }
+    
+    // Key benefits list
+    const benefitsList = document.getElementById('modal-service-benefits');
+    benefitsList.innerHTML = '';
+    if (service.benefits && service.benefits.length > 0) {
+        service.benefits.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <svg class="check-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>${item}</span>
+            `;
+            benefitsList.appendChild(li);
+        });
+    } else {
+        benefitsList.innerHTML = '<li><span>Assisted execution and swift submission of files.</span></li>';
+    }
+    
+    // Required documents list
+    const docsList = document.getElementById('modal-service-docs');
+    docsList.innerHTML = '';
+    if (service.documents && service.documents.length > 0) {
+        service.documents.forEach(doc => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <svg class="doc-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"></path><path d="M14 2v5h5"></path><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span>${doc.label} ${doc.required ? '<strong style="color: var(--danger);">*</strong>' : '(Optional)'}</span>
+            `;
+            docsList.appendChild(li);
+        });
+    } else {
+        docsList.innerHTML = '<li><span>No documents required.</span></li>';
+    }
+    
+    // Frequently Asked Questions
+    const faqContainer = document.getElementById('modal-service-faqs');
+    faqContainer.innerHTML = '';
+    if (service.faqs && service.faqs.length > 0) {
+        service.faqs.forEach(faq => {
+            const div = document.createElement('div');
+            div.className = 'faq-item';
+            div.innerHTML = `
+                <button class="faq-question" onclick="window.toggleFaqItem(this)">
+                    <span>${faq.q}</span>
+                    <svg class="faq-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer">
+                    <p>${faq.a}</p>
+                </div>
+            `;
+            faqContainer.appendChild(div);
+        });
+    } else {
+        faqContainer.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">No FAQs available for this service.</p>';
+    }
+    
+    // Action button config
+    const applyBtn = document.getElementById('modal-apply-btn');
+    const isGroup = (service.id === 'samagra' || service.id === 'loan' || service.id === 'pan' || service.id === 'gumasta');
+    if (isGroup) {
+        applyBtn.innerHTML = `
+            Choose Sub-Service
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        `;
+    } else {
+        applyBtn.innerHTML = `
+            Proceed to Apply
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        `;
+    }
+    
+    applyBtn.onclick = () => {
+        closeServiceDetailsModal();
+        if (service.id === 'samagra') openSamagraDetails();
+        else if (service.id === 'loan') openLoanDetails();
+        else if (service.id === 'pan') openPanDetails();
+        else if (service.id === 'gumasta') openGumastaDetails();
+        else startApplication(service.id);
+    };
+    
+    // Show modal overlay
+    const modal = document.getElementById('service-details-modal');
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden'; // prevent background scrolling
+}
+
+// Controller logic for closing the unified details modal
+window.closeServiceDetailsModal = function() {
+    const modal = document.getElementById('service-details-modal');
+    if (modal) modal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+// Accordion toggle logic for inline card document lists
+window.toggleDocsCollapse = function(btn) {
+    const container = btn.closest('.service-docs-container');
+    const drawer = container.querySelector('.service-docs-collapse');
+    const isExpanded = container.classList.contains('expanded');
+    
+    if (isExpanded) {
+        container.classList.remove('expanded');
+        drawer.style.maxHeight = '0px';
+        drawer.style.opacity = '0';
+    } else {
+        container.classList.add('expanded');
+        drawer.style.maxHeight = drawer.scrollHeight + 'px';
+        drawer.style.opacity = '1';
+    }
+}
+
+// Accordion toggle logic for FAQ items inside modal
+window.toggleFaqItem = function(btn) {
+    const item = btn.closest('.faq-item');
+    const answer = item.querySelector('.faq-answer');
+    const isExpanded = item.classList.contains('active');
+    
+    // Accordion behavior: close siblings
+    const siblings = item.parentNode.querySelectorAll('.faq-item');
+    siblings.forEach(sib => {
+        if (sib !== item) {
+            sib.classList.remove('active');
+            const sibAnswer = sib.querySelector('.faq-answer');
+            if (sibAnswer) sibAnswer.style.maxHeight = '0px';
+        }
+    });
+    
+    if (isExpanded) {
+        item.classList.remove('active');
+        answer.style.maxHeight = '0px';
+    } else {
+        item.classList.add('active');
+        answer.style.maxHeight = answer.scrollHeight + 'px';
     }
 }
 

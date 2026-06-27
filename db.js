@@ -10,10 +10,27 @@ const SERVICES = {
     pan: {
         id: 'pan',
         name: 'PAN Card Registration',
+        subtitle: 'New & Correction',
         fee: 200,
         timeline: '3 to 5 working days',
         desc: 'Apply for a new PAN card or correct/update details on an existing PAN card.',
         icon: 'credit-card',
+        eligibility: [
+            'Any Indian Citizen (individual, company, or firm) is eligible.',
+            'Minors can apply through their parents or legal guardians.',
+            'Foreign nationals who need to execute financial transactions in India.'
+        ],
+        benefits: [
+            'Mandatory for filing Income Tax Returns and tax compliance.',
+            'Required to open a bank account, get a credit card, or make investments.',
+            'Acts as a globally recognized, lifetime valid identity proof.',
+            'Avoid a flat 20% TDS on certain interest income and transaction payments.'
+        ],
+        faqs: [
+            { q: 'Can I hold more than one PAN Card?', a: 'No. Holding multiple PAN cards is illegal under Section 272B of the Income Tax Act and attracts a flat penalty of ₹10,000.' },
+            { q: 'Is physical presence required for applying?', a: 'No, our cyber cafe operators handle the entire submission digitally. You only need to verify via Aadhaar OTP or upload physical sign scans.' },
+            { q: 'How is the physical PAN card delivered?', a: 'Once approved, the Income Tax Department dispatches the physical card directly to your Aadhaar-registered address via speed post.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -62,11 +79,27 @@ const SERVICES = {
     },
     samagra: {
         id: 'samagra',
-        name: 'Samagra ID Portal',
+        name: 'Samagra Portal',
+        subtitle: 'KYC & Member Services',
         fee: 40,
         timeline: '5 to 7 working days',
         desc: 'Choose KYC, Member Add, or Other State Samagra Add services from one place.',
         icon: 'users',
+        eligibility: [
+            'Must be a permanent resident of Madhya Pradesh (MP).',
+            'All family members must reside in the state for family profile mapping.',
+            'Must hold a valid Aadhaar card linked with active mobile number for eKYC.'
+        ],
+        benefits: [
+            'Access all state government direct benefit transfers (DBT) and welfare funds.',
+            'Essential for school/college admissions and state scholarship distribution.',
+            'Required to get subsidised food grains under the National Food Security Act (NFSA).'
+        ],
+        faqs: [
+            { q: 'What is the difference between a Family ID and a Member ID?', a: 'A Samagra Family ID is an 8-digit code issued for the entire household, whereas a Member ID is a unique 9-digit code issued to individual family members.' },
+            { q: 'Is Aadhaar eKYC mandatory on Samagra?', a: 'Yes, eKYC is mandatory to link your Aadhaar details, which automatically validates your name, date of birth, and gender.' },
+            { q: 'How long does member addition take?', a: 'Once submitted by our cafe operator, it goes to municipal/Panchayat level approval, taking 5 to 7 working days.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -110,11 +143,28 @@ const SERVICES = {
     },
     msme: {
         id: 'msme',
-        name: 'MSME / Udyam Registration',
+        name: 'MSME Registration',
+        subtitle: 'Udyam Certificate',
         fee: 199,
         timeline: '2 to 3 working days',
         desc: 'Register your micro, small or medium enterprise to obtain MSME Udyam Certificate.',
         icon: 'briefcase',
+        eligibility: [
+            'All Micro, Small, and Medium sized businesses (MSMEs).',
+            'Proprietorships, partnerships, Hindu Undivided Families (HUF), self-help groups, LLPs, and companies.',
+            'Must have a commercial operation and active Aadhaar + PAN.'
+        ],
+        benefits: [
+            'Eligible for collateral-free bank loans under Credit Guarantee schemes.',
+            'Special interest rate concessions (typically 1% to 1.5% lower) from banks.',
+            '50% subsidy on patent, trademark, and copyright registration fee.',
+            'Government priority procurement and protection against delayed buyer payments.'
+        ],
+        faqs: [
+            { q: 'Is there any annual renewal for MSME Udyam Registration?', a: 'No, once registered under the Udyam portal, the certificate has lifetime validity unless voluntarily cancelled.' },
+            { q: 'What are the micro, small, and medium category limits?', a: 'Micro: Investment < ₹1 Cr, Turnover < ₹5 Cr. Small: Investment < ₹10 Cr, Turnover < ₹50 Cr. Medium: Investment < ₹50 Cr, Turnover < ₹250 Cr.' },
+            { q: 'Can a trader apply for MSME registration?', a: 'Yes, wholesale and retail traders are now eligible to register under the Udyam portal for priority sector lending.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -161,11 +211,28 @@ const SERVICES = {
     },
     gumasta: {
         id: 'gumasta',
-        name: 'Gumasta License (Shop & Establishment)',
+        name: 'Gumasta License',
+        subtitle: 'Shop & Establishment',
         fee: 699,
         timeline: '4 to 6 working days',
         desc: 'Choose Individual Proprietorship or Partnership Firm for Gumasta license registration.',
         icon: 'store',
+        eligibility: [
+            'Any retail shop, service firm, commercial office, restaurant or hotel.',
+            'Must have a commercial establishment premise with a physical address.',
+            'Must register within 30 days of initiating business activities.'
+        ],
+        benefits: [
+            'Legal and mandatory permit under the State Shop & Establishment Act.',
+            'Acts as official proof of business existence required for opening bank accounts.',
+            'Enables access to local municipal tenders and business loans.',
+            'Prevents heavy fines and closure notices during labor department inspections.'
+        ],
+        faqs: [
+            { q: 'Is Gumasta license required for home-based work?', a: 'Yes, if you operate a commercial entity, hire employees, or need a business current account, Gumasta registration is legally required.' },
+            { q: 'How long is the Gumasta license valid?', a: 'It varies by state; it can be issued for 1 year, 5 years, or have lifetime validity with an option to select during filing.' },
+            { q: 'What is the penalty for operating without a license?', a: 'Local authorities can levy fines ranging from ₹5,000 to ₹50,000 or issue closure warnings depending on establishment size.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -211,10 +278,27 @@ const SERVICES = {
     ayushman: {
         id: 'ayushman',
         name: 'Ayushman Card',
+        subtitle: 'PM-JAY Health Insurance',
         fee: 200,
         timeline: '3 to 5 working days',
         desc: 'Apply for a new Ayushman Bharat Golden Card to get free health insurance coverage up to ₹5 Lakhs.',
         icon: 'shield',
+        eligibility: [
+            'Must be listed in the SECC-2011 (Socio-Economic Caste Census) database.',
+            'Should hold an active, valid NFSA Ration Card or state-eligible Food Slip.',
+            'Family members mapped under an active state resident profile.'
+        ],
+        benefits: [
+            'Provides free, cashless health insurance coverage up to ₹5 Lakhs per family per year.',
+            'Covers secondary and tertiary hospitalisation at all government and impaneled private hospitals.',
+            'Pre-existing conditions and post-treatment expenses are covered from day one.',
+            'Zero out-of-pocket expenses for surgery, diagnostics, and essential medicines.'
+        ],
+        faqs: [
+            { q: 'Is there any age or family size limit under PM-JAY?', a: 'No, PM-JAY does not restrict family size or age. All members registered on the eligible card receive full individual benefits.' },
+            { q: 'How can I check if my name is in the beneficiary list?', a: 'Our cafe operators will search the official PM-JAY portal using your Aadhaar number, Samagra ID, or Ration card details to check eligibility.' },
+            { q: 'What is the Ayushman Golden Card?', a: 'It is a physical beneficiary identity card. Once issued, you simply present it at hospital reception to start cashless treatment.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -254,10 +338,27 @@ const SERVICES = {
     itr: {
         id: 'itr',
         name: 'ITR Filing',
+        subtitle: 'Income Tax Return',
         fee: 799,
         timeline: '2 to 3 working days',
         desc: 'Submit your income tax return request with PAN, bank passbook, and Aadhaar documents.',
         icon: 'file-text',
+        eligibility: [
+            'Individuals with gross annual income exceeding ₹2.5 Lakhs (New/Old tax regime limits).',
+            'Anyone who has paid excess TDS and wishes to claim a refund.',
+            'Mandatory for those seeking visa approvals, high-value loans, or business registrations.'
+        ],
+        benefits: [
+            'Stay fully compliant with Income Tax Department rules and avoid penalties.',
+            'Acts as official, government-accepted income proof for visa processing and loan approvals.',
+            'Allows you to offset capital losses against capital gains in future years.',
+            'Enables direct refund of extra TDS deducted on salary or bank interest.'
+        ],
+        faqs: [
+            { q: 'What is Form 16 and is it mandatory?', a: 'Form 16 is a certificate of TDS issued by employers. If you are salaried, it is highly recommended, but ITR can still be filed using monthly payslips and bank statements.' },
+            { q: 'Is my financial data secure?', a: 'Absolutely. EasyCafe uses end-to-end security, and returns are prepared only by certified tax professionals.' },
+            { q: 'What is the last date to file ITR?', a: 'For individuals, the standard deadline is July 31st of the assessment year, but late returns can be filed with a penalty fee.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -299,10 +400,26 @@ const SERVICES = {
     aadhaarUpdate: {
         id: 'aadhaarUpdate',
         name: 'Aadhaar Update',
+        subtitle: 'Correction & Mobile Link',
         fee: 199,
         timeline: '3 to 5 working days',
         desc: 'Request Aadhaar correction or update with registered mobile and supporting document upload.',
         icon: 'id-card',
+        eligibility: [
+            'Any resident holding an existing 12-digit Aadhaar Card.',
+            'Must have a valid mobile number linked with Aadhaar (or linking request ready).',
+            'Must provide official supporting proof for requested name, DOB, or address changes.'
+        ],
+        benefits: [
+            'Keeps your identity details matching other legal documents (like PAN and Passport).',
+            'Ensures hassle-free banking eKYC, SIM registration, and mutual fund updates.',
+            'Enables login to government portals (EPFO, I-T portal, DigiLocker) using secure OTPs.'
+        ],
+        faqs: [
+            { q: 'Can I change my address online without proof?', a: 'No, a valid document proof of address (like electricity bill, rent agreement, bank statement) is mandatory.' },
+            { q: 'Can mobile number be updated online?', a: 'Mobile number links require biometrics at an Aadhaar center, but we can pre-file and schedule the update request to minimize wait times.' },
+            { q: 'How long does Aadhaar update take?', a: 'Once submitted to UIDAI by our cafe, it typically reflects in their database within 3 to 5 working days.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
@@ -342,12 +459,29 @@ const SERVICES = {
     },
     loan: {
         id: 'loan',
-        name: 'Loan Requirement',
+        name: 'Loan Services',
+        subtitle: 'Home, Personal & Business',
         fee: 0,
         inquiryOnly: true,
         timeline: '1 to 2 working days',
         desc: 'Choose from Home Loan, Personal Loan, or Business Loan services.',
         icon: 'landmark',
+        eligibility: [
+            'Indian citizens aged between 21 and 65 years.',
+            'Salaried employees or self-employed professionals with business turnover details.',
+            'Minimum stable monthly income of ₹15,000 (varies by bank and loan type).',
+            'Good credit score (typically 700+ is preferred for instant offers).'
+        ],
+        benefits: [
+            'Get matched with customized loan options from top-tier public & private banks.',
+            'Assisted documentation review by cyber cafe experts to prevent bank rejections.',
+            'Completely free service—this is an initial eligibility inquiry with zero charges.'
+        ],
+        faqs: [
+            { q: 'Will submitting this inquiry affect my CIBIL/Credit score?', a: 'No. This is a soft inquiry carried out through initial criteria, meaning it does not register as a hard check on your credit report.' },
+            { q: 'What is the maximum loan amount I can inquire for?', a: 'There is no limit. It depends on your monthly income, business balance sheets, and collateral details (if applying for home/business loans).' },
+            { q: 'How long does bank approval take?', a: 'Once our operator registers your profile, bank partners typically contact you and provide pre-approvals within 1 to 2 working days.' }
+        ],
         svgMarkup: `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
                 <defs>
