@@ -817,6 +817,13 @@ function beginServiceApplication(service) {
     currentService = service;
     if (!currentService) return;
     currentStep = 1;
+    // Revoke any blob URLs from the previous session to free memory
+    Object.keys(uploadedFiles).forEach(key => {
+        const url = uploadedFiles[key];
+        if (url && typeof url === 'string' && url.startsWith('blob:')) {
+            URL.revokeObjectURL(url);
+        }
+    });
     uploadedFiles = {};
     
     const form = document.getElementById('application-form');
@@ -1022,6 +1029,10 @@ function renderWizardStep2() {
                 border-color: #ef4444 !important;
                 background: #fef2f2 !important;
             }
+            .ufc-drop-zone.uploading {
+                border-color: #7c3aed !important;
+                background: #faf5ff !important;
+            }
             .ufc-drop-icon {
                 font-size: 22px;
                 color: #7c3aed;
@@ -1046,6 +1057,47 @@ function renderWizardStep2() {
                 align-items: center !important;
                 gap: 4px !important;
             }
+            .ufc-progress-wrap {
+                width: 100% !important;
+                padding: 6px 4px 2px !important;
+            }
+            .ufc-progress-track {
+                width: 100% !important;
+                height: 5px !important;
+                background: #e5e7eb !important;
+                border-radius: 99px !important;
+                overflow: hidden !important;
+            }
+            .ufc-progress-fill {
+                height: 100% !important;
+                width: 0% !important;
+                background: linear-gradient(90deg, #7c3aed, #4f46e5) !important;
+                border-radius: 99px !important;
+                transition: width 0.15s ease !important;
+            }
+            .ufc-progress-text {
+                font-size: 10px !important;
+                color: #7c3aed !important;
+                text-align: right !important;
+                margin-top: 3px !important;
+                font-weight: 600 !important;
+            }
+            .ufc-retry-btn {
+                margin-top: 4px !important;
+                font-size: 11px !important;
+                font-weight: 600 !important;
+                color: #7c3aed !important;
+                background: #f5f3ff !important;
+                border: 1px solid #c4b5fd !important;
+                border-radius: 6px !important;
+                padding: 4px 10px !important;
+                cursor: pointer !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 4px !important;
+                transition: background 0.15s !important;
+            }
+            .ufc-retry-btn:hover { background: #ede9fe !important; }
         `;
         document.head.appendChild(style);
     }
@@ -1142,15 +1194,39 @@ function renderWizardStep2() {
     });
 }
 
-// Handle file upload for the new v2 card UI
-async function handleFileUploadV2(docId, inputEl) {
-    const file = inputEl.files[0];
+// Cache of File objects for retry support (keyed by docId)
+const _cachedFiles = {};
+
+// ─── Handle file upload for the new v2 card UI ───────────────────────────────
+async function handleFileUploadV2(docId, inputElOrFile) {
+    // Accept either an input element or a File object directly (for retry)
+    let file;
+    if (inputElOrFile instanceof File) {
+        file = inputElOrFile;
+    } else {
+        file = inputElOrFile.files ? inputElOrFile.files[0] : null;
+    }
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-        alert('File is too large. Maximum size is 5MB.');
-        inputEl.value = '';
+    // ── Client-side validation ────────────────────────────────────────────
+    const allowedExts = ['.pdf', '.jpg', '.jpeg', '.png'];
+    const ext = (file.name || '').substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowedExts.includes(ext)) {
+        showUploadError(docId, `Invalid file type (${ext || 'unknown'}). Allowed: JPG, PNG, PDF.`);
         return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        showUploadError(docId, `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 5 MB.`);
+        return;
+    }
+
+    // Cache the file for retry
+    _cachedFiles[docId] = file;
+
+    // Revoke the previous object URL for this slot to prevent memory leaks
+    const prevUrl = uploadedFiles[docId];
+    if (prevUrl && prevUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(prevUrl);
     }
 
     const zone = document.getElementById(`zone-v2-${docId}`);
@@ -1159,15 +1235,55 @@ async function handleFileUploadV2(docId, inputEl) {
     const hint = document.getElementById(`zone-hint-${docId}`);
     const card = document.getElementById(`upload-card-${docId}`);
 
+    // Remove any previous retry buttons and error messages
+    const prevRetry = document.getElementById(`retry-${docId}`);
+    if (prevRetry) prevRetry.remove();
+    const prevErr = document.getElementById(`err-${docId}`);
+    if (prevErr) prevErr.remove();
+
+    // ── Show progress UI ──────────────────────────────────────────────────
+    if (zone) {
+        zone.classList.remove('upload-error', 'uploaded');
+        zone.classList.add('uploading');
+    }
+    if (icon) icon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>';
     if (main) main.textContent = 'Uploading...';
+    if (hint) hint.textContent = `${file.name} — ${(file.size / 1024).toFixed(0)} KB`;
+
+    // Inject progress bar
+    let progressWrap = document.getElementById(`prog-wrap-${docId}`);
+    if (!progressWrap && card) {
+        progressWrap = document.createElement('div');
+        progressWrap.className = 'ufc-progress-wrap';
+        progressWrap.id = `prog-wrap-${docId}`;
+        progressWrap.innerHTML = `
+            <div class="ufc-progress-track">
+                <div class="ufc-progress-fill" id="prog-fill-${docId}"></div>
+            </div>
+            <div class="ufc-progress-text" id="prog-text-${docId}">0%</div>
+        `;
+        card.appendChild(progressWrap);
+    }
+
+    const progFill = document.getElementById(`prog-fill-${docId}`);
+    const progText = document.getElementById(`prog-text-${docId}`);
+
+    const onProgress = (pct) => {
+        if (progFill) progFill.style.width = pct + '%';
+        if (progText) progText.textContent = pct + '%';
+        if (main && pct < 100) main.textContent = `Uploading... ${pct}%`;
+    };
 
     try {
-        const response = await window.api.uploadDocument(file);
+        const response = await window.api.uploadDocument(file, 'applications', onProgress);
         uploadedFiles[docId] = response.url;
         uploadedFiles[docId + '__name'] = file.name;
 
+        // Remove progress bar
+        if (progressWrap) progressWrap.remove();
+
         if (zone) {
-            zone.classList.remove('upload-error');
+            zone.classList.remove('upload-error', 'uploading');
             zone.classList.add('uploaded');
         }
         if (icon) icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
@@ -1179,15 +1295,69 @@ async function handleFileUploadV2(docId, inputEl) {
         const errEl = document.getElementById(`err-${docId}`);
         if (errEl) errEl.remove();
 
-        // Re-check the any-one-required group this doc belongs to, in case
-        // it was previously flagged as missing.
         clearAnyOneGroupErrorIfSatisfied(docId);
     } catch (err) {
-        console.error(err);
-        alert('Upload failed: ' + err.message);
-        if (main) main.textContent = 'Upload failed. Click to retry';
-        if (zone) zone.classList.add('upload-error');
+        console.error('Upload error for', docId, err);
+
+        // Remove progress bar
+        if (progressWrap) progressWrap.remove();
+
+        // Show user-friendly error and retry button
+        const msg = err.message || 'Upload failed. Please try again.';
+        showUploadError(docId, msg, true);
     }
+}
+
+// ─── Show a friendly error message on a card ──────────────────────────────────
+function showUploadError(docId, message, showRetry = false) {
+    const zone = document.getElementById(`zone-v2-${docId}`);
+    const icon = document.getElementById(`zone-icon-${docId}`);
+    const main = document.getElementById(`zone-main-${docId}`);
+    const hint = document.getElementById(`zone-hint-${docId}`);
+    const card = document.getElementById(`upload-card-${docId}`);
+
+    if (zone) { zone.classList.remove('uploading', 'uploaded'); zone.classList.add('upload-error'); }
+    if (icon) icon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>';
+    if (main) main.textContent = message.length > 50 ? message.substring(0, 47) + '...' : message;
+    if (hint) hint.textContent = showRetry ? 'See retry button below' : 'Try again';
+    if (card) card.classList.add('has-error');
+
+    // Add retry button if requested
+    if (showRetry && card && !document.getElementById(`retry-${docId}`)) {
+        const retryBtn = document.createElement('button');
+        retryBtn.id = `retry-${docId}`;
+        retryBtn.className = 'ufc-retry-btn';
+        retryBtn.type = 'button';
+        retryBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 .49-4.01"></path></svg> Retry Upload`;
+        retryBtn.onclick = (e) => { e.stopPropagation(); retryFileUpload(docId); };
+        card.appendChild(retryBtn);
+    }
+
+    // Add error text below the card if not present
+    if (card && !document.getElementById(`err-${docId}`)) {
+        const errEl = document.createElement('div');
+        errEl.className = 'ufc-err-msg';
+        errEl.id = `err-${docId}`;
+        errEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg> ${message}`;
+        card.appendChild(errEl);
+    }
+}
+
+// ─── Retry a failed upload using the cached File ─────────────────────────────
+async function retryFileUpload(docId) {
+    const file = _cachedFiles[docId];
+    if (!file) {
+        // If no cached file, fall back to re-opening the file picker
+        const input = document.getElementById(`upload-${docId}`);
+        if (input) input.click();
+        return;
+    }
+
+    // Remove retry button before re-attempting
+    const retryBtn = document.getElementById(`retry-${docId}`);
+    if (retryBtn) retryBtn.remove();
+
+    await handleFileUploadV2(docId, file);
 }
 
 // Handle drag-and-drop for v2 upload cards
@@ -2046,3 +2216,96 @@ function closeTracking() {
     const input = document.getElementById('track-search-input');
     if (input) input.value = '';
 }
+
+// ─── Automatic Offline-to-Online Synchronization ──────────────────────────────
+async function syncOfflineSubmissions() {
+    const offlineQueue = JSON.parse(localStorage.getItem('easycafe_offline_submissions') || '[]');
+    if (offlineQueue.length === 0) return;
+
+    // Test if backend is reachable
+    try {
+        const testResp = await fetch(`${window.api && window.api.constructor ? 'http://localhost:3000' : 'http://localhost:3000'}/uploads`, { method: 'OPTIONS', signal: AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined });
+        // If we get here, backend is up
+    } catch (e) {
+        // Still offline, do nothing
+        return;
+    }
+
+    const mockDb = JSON.parse(localStorage.getItem('easycafe_mock_applications') || '{}');
+    const unsynced = offlineQueue.filter(item => !item.synced);
+    if (unsynced.length === 0) return;
+
+    console.log(`[Sync] Found ${unsynced.length} unsynced offline submission(s). Attempting to sync...`);
+
+    for (const item of unsynced) {
+        try {
+            const payload = { ...item.payload };
+
+            // Re-upload any blob: URLs to the real server
+            if (payload.documents) {
+                for (const docId of Object.keys(payload.documents)) {
+                    if (docId.endsWith('__name')) continue;
+                    const url = payload.documents[docId];
+                    if (url && url.startsWith('blob:')) {
+                        // Blob URL still alive? Try fetching it
+                        try {
+                            const blobResp = await fetch(url);
+                            const blob = await blobResp.blob();
+                            const fileName = payload.documents[docId + '__name'] || `file_${docId}`;
+                            const file = new File([blob], fileName, { type: blob.type });
+                            const uploadResp = await window.api.uploadDocument(file, 'applications');
+                            payload.documents[docId] = uploadResp.url;
+                        } catch (blobErr) {
+                            console.warn(`[Sync] Could not re-upload blob for docId ${docId}:`, blobErr.message);
+                        }
+                    }
+                }
+            }
+
+            // Submit to the real backend
+            const application = await fetch('http://localhost:3000/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json());
+
+            // Update the mock DB entry with the real server ID
+            if (mockDb[item.mockId]) {
+                mockDb[item.mockId].realId = application.id;
+                mockDb[item.mockId].isSynced = true;
+                mockDb[item.mockId].status = application.status;
+            }
+
+            item.synced = true;
+            item.realId = application.id;
+
+            console.log(`[Sync] Application ${item.mockId} synced as ${application.id}`);
+        } catch (syncErr) {
+            console.warn(`[Sync] Failed to sync ${item.mockId}:`, syncErr.message);
+        }
+    }
+
+    localStorage.setItem('easycafe_mock_applications', JSON.stringify(mockDb));
+    localStorage.setItem('easycafe_offline_submissions', JSON.stringify(offlineQueue));
+
+    const syncedCount = offlineQueue.filter(i => i.synced).length;
+    if (syncedCount > 0) {
+        console.log(`[Sync] Successfully synced ${syncedCount} submission(s) to the server.`);
+        // Show a brief non-intrusive toast if there's a notification system
+        const toastEl = document.getElementById('sync-toast');
+        if (toastEl) {
+            toastEl.textContent = `✓ ${syncedCount} offline submission(s) synced to server.`;
+            toastEl.style.display = 'block';
+            setTimeout(() => { toastEl.style.display = 'none'; }, 4000);
+        }
+    }
+}
+
+// Trigger sync when browser regains internet connection
+window.addEventListener('online', () => {
+    console.log('[Sync] Network restored. Attempting to sync offline submissions...');
+    syncOfflineSubmissions();
+});
+
+// Also run a background sync check every 30 seconds
+setInterval(syncOfflineSubmissions, 30000);

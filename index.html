@@ -820,7 +820,28 @@
     <script src="db.js"></script>
     <script src="app.js"></script>
     <script src="admin.js"></script>
+    <!-- Offline Sync Toast Notification -->
+    <div id="sync-toast" style="
+        display: none;
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #16a34a;
+        color: #fff;
+        padding: 10px 22px;
+        border-radius: 99px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: 'Outfit', sans-serif;
+        box-shadow: 0 4px 18px rgba(22,163,74,0.35);
+        z-index: 999999;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+    "></div>
+
     <!-- Unified Service Details Modal -->
+
     <div id="service-details-modal" class="auth-modal-overlay hidden" style="z-index: 99999;">
         <div class="service-details-modal-card">
             <button class="service-details-modal-close" onclick="closeServiceDetailsModal()">&times;</button>

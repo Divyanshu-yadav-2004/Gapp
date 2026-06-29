@@ -22,7 +22,21 @@ async function bootstrap() {
     : ['http://localhost:5000', 'http://127.0.0.1:5000', 'http://localhost:3000', 'http://127.0.0.1:3000'];
     
   app.enableCors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin, 'null' (for local file double-clicks), file:// schemes, localhost/127.0.0.1, or configured list
+      if (
+        !origin ||
+        origin === 'null' ||
+        origin.startsWith('file://') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1') ||
+        corsOrigins.includes(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, corsOrigins);
+      }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
