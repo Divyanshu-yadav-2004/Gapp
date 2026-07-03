@@ -19,7 +19,12 @@ async function bootstrap() {
         : ['http://localhost:5000', 'http://127.0.0.1:5000', 'http://localhost:3000', 'http://127.0.0.1:3000'];
     app.enableCors({
         origin: (origin, callback) => {
-            if (!origin || origin === 'null' || origin.startsWith('file://') || corsOrigins.includes(origin)) {
+            if (!origin ||
+                origin === 'null' ||
+                origin.startsWith('file://') ||
+                origin.includes('localhost') ||
+                origin.includes('127.0.0.1') ||
+                corsOrigins.includes(origin)) {
                 callback(null, true);
             }
             else {

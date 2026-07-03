@@ -10,28 +10,29 @@ export declare class PaymentsService {
     private readonly logger;
     constructor(prisma: PrismaService, configService: ConfigService, emailService: EmailService, notificationGateway: NotificationGateway);
     createOrder(applicationId: string): Promise<{
-        payment_session_id: any;
         order_id: string;
         amount: number;
-        cf_order_id: any;
-        is_simulated?: undefined;
-    } | {
-        is_simulated: boolean;
-        order_id: string;
-        amount: number;
-        payment_session_id: string;
-        cf_order_id?: undefined;
+        currency: string;
+        key_id: string;
+        customer_name: string;
+        customer_email: string;
+        customer_phone: string;
     }>;
-    verifyWebhookSignature(signature: string, timestamp: string, rawBody: string): boolean;
+    verifyPaymentSignature(orderId: string, paymentId: string, signature: string): Promise<any>;
+    getPaymentsForOrder(orderId: string): Promise<{
+        status: import(".prisma/client").$Enums.PaymentStatus;
+        paymentMethod: string;
+        paymentId: string;
+        amount: number;
+        timestamp: Date;
+    }>;
+    verifyWebhookSignature(signature: string, rawBody: string): boolean;
     handleWebhook(payload: any): Promise<{
         status: string;
     }>;
     verifyPaymentDirectly(orderId: string): Promise<{
-        status: string;
-        transactionId: any;
-    } | {
-        status: "PENDING" | "FAILED";
-        transactionId?: undefined;
+        status: import(".prisma/client").$Enums.PaymentStatus;
+        transactionId: string;
     }>;
     markPaymentSuccessful(orderId: string, transactionId: string, paymentMethod: string, gatewayResponse: any): Promise<{
         status: string;

@@ -18,7 +18,7 @@ exports.PaymentsModule = PaymentsModule;
 exports.PaymentsModule = PaymentsModule = __decorate([
     (0, common_1.Module)({
         imports: [notifications_module_1.NotificationsModule, config_1.ConfigModule],
-        controllers: [payments_controller_1.PaymentsController],
+        controllers: [payments_controller_1.PaymentsController, payments_controller_1.OrdersController],
         providers: [payments_service_1.PaymentsService],
         exports: [payments_service_1.PaymentsService],
     })

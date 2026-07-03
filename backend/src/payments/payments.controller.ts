@@ -8,7 +8,7 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('create-order')
-  @ApiOperation({ summary: 'Create a new Cashfree PG payment order session (Public)' })
+  @ApiOperation({ summary: 'Create a new Razorpay payment order (Public)' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -25,18 +25,41 @@ export class PaymentsController {
     return this.paymentsService.createOrder(applicationId);
   }
 
+  @Post('verify-signature')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify Razorpay payment signature' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        razorpay_order_id: { type: 'string' },
+        razorpay_payment_id: { type: 'string' },
+        razorpay_signature: { type: 'string' },
+      },
+      required: ['razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature'],
+    },
+  })
+  verifySignature(
+    @Body('razorpay_order_id') orderId: string,
+    @Body('razorpay_payment_id') paymentId: string,
+    @Body('razorpay_signature') signature: string
+  ) {
+    if (!orderId || !paymentId || !signature) {
+      throw new BadRequestException('razorpay_order_id, razorpay_payment_id, and razorpay_signature are required');
+    }
+    return this.paymentsService.verifyPaymentSignature(orderId, paymentId, signature);
+  }
+
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cashfree Webhook Endpoint (Callback verification)' })
+  @ApiOperation({ summary: 'Razorpay Webhook Endpoint (Callback verification)' })
   async handleWebhook(
-    @Headers('x-webhook-signature') signature: string,
-    @Headers('x-webhook-timestamp') timestamp: string,
+    @Headers('x-razorpay-signature') signature: string,
     @Body() payload: any
   ) {
-    // If webhook signature is present, verify it (strict security rule)
-    if (signature && timestamp) {
+    if (signature) {
       const rawBody = JSON.stringify(payload);
-      const isVerified = this.paymentsService.verifyWebhookSignature(signature, timestamp, rawBody);
+      const isVerified = this.paymentsService.verifyWebhookSignature(signature, rawBody);
       if (!isVerified) {
         throw new BadRequestException('Invalid webhook signature');
       }
@@ -73,3 +96,19 @@ export class PaymentsController {
     return this.paymentsService.simulatePaymentResult(orderId, status);
   }
 }
+
+@ApiTags('Orders')
+@Controller('v1/orders')
+export class OrdersController {
+  constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Get(':orderId/payments')
+  @ApiOperation({ summary: 'Lookup payments for a specific Razorpay order' })
+  getPaymentsForOrder(@Param('orderId') orderId: string) {
+    if (!orderId) {
+      throw new BadRequestException('orderId is required');
+    }
+    return this.paymentsService.getPaymentsForOrder(orderId);
+  }
+}
+

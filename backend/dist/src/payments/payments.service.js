@@ -48,134 +48,219 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         let payment = await this.prisma.payment.findFirst({
             where: { applicationId, status: 'PENDING' },
         });
-        const orderId = payment ? payment.orderId : `ORDER-${applicationId}-${Date.now()}`;
-        if (!payment) {
-            payment = await this.prisma.payment.create({
-                data: {
-                    applicationId,
-                    orderId,
-                    amount: app.amountPaid,
-                    status: 'PENDING',
-                },
-            });
+        let rzpOrderId;
+        const amount = app.amountPaid;
+        if (payment && payment.orderId.startsWith('order_')) {
+            rzpOrderId = payment.orderId;
         }
-        const appId = this.configService.get('CASHFREE_APP_ID');
-        const secretKey = this.configService.get('CASHFREE_SECRET_KEY');
-        const apiUrl = this.configService.get('CASHFREE_API_URL');
+        else {
+            const receiptId = `ORDER-${applicationId}-${Date.now()}`;
+            const keyId = this.configService.get('RAZORPAY_KEY_ID');
+            const keySecret = this.configService.get('RAZORPAY_KEY_SECRET');
+            if (!keyId || !keySecret) {
+                throw new common_1.BadRequestException('Razorpay API keys are not configured in environment variables');
+            }
+            const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`;
+            try {
+                this.logger.log(`Creating Razorpay order for application ${applicationId} with receipt ${receiptId}`);
+                const response = await axios_1.default.post('https://api.razorpay.com/v1/orders', {
+                    amount: Math.round(amount * 100),
+                    currency: 'INR',
+                    receipt: receiptId,
+                    notes: {
+                        applicationId: app.id,
+                        serviceName: app.serviceName,
+                        customerName: app.customerName,
+                        customerPhone: app.customerPhone,
+                        customerEmail: app.customerEmail,
+                    },
+                }, {
+                    headers: {
+                        Authorization: authHeader,
+                        'Content-Type': 'application/json',
+                    },
+                });
+                rzpOrderId = response.data.id;
+                if (payment) {
+                    payment = await this.prisma.payment.update({
+                        where: { id: payment.id },
+                        data: {
+                            orderId: rzpOrderId,
+                            gatewayResponse: {
+                                receiptId,
+                                rzpOrderId,
+                                currency: 'INR',
+                                createdTime: new Date().toISOString(),
+                            },
+                        },
+                    });
+                }
+                else {
+                    payment = await this.prisma.payment.create({
+                        data: {
+                            applicationId,
+                            orderId: rzpOrderId,
+                            amount,
+                            status: 'PENDING',
+                            gatewayResponse: {
+                                receiptId,
+                                rzpOrderId,
+                                currency: 'INR',
+                                createdTime: new Date().toISOString(),
+                            },
+                        },
+                    });
+                }
+            }
+            catch (error) {
+                const errMsg = error.response?.data?.error?.description || error.message;
+                this.logger.error(`Razorpay API Error: ${errMsg}`);
+                throw new common_1.BadRequestException(`Payment gateway error: ${errMsg}`);
+            }
+        }
+        return {
+            order_id: rzpOrderId,
+            amount: amount,
+            currency: 'INR',
+            key_id: this.configService.get('RAZORPAY_KEY_ID'),
+            customer_name: app.customerName,
+            customer_email: app.customerEmail,
+            customer_phone: app.customerPhone,
+        };
+    }
+    async verifyPaymentSignature(orderId, paymentId, signature) {
+        const secret = this.configService.get('RAZORPAY_KEY_SECRET');
+        if (!secret) {
+            throw new common_1.BadRequestException('Razorpay Key Secret is not configured');
+        }
+        const text = `${orderId}|${paymentId}`;
+        const generatedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(text)
+            .digest('hex');
+        const isVerified = generatedSignature === signature;
+        if (!isVerified) {
+            this.logger.warn(`Signature verification FAILED for Order ID: ${orderId}`);
+            await this.markPaymentFailed(orderId, {
+                failureReason: 'Invalid payment signature (verification failed)',
+                failedAt: new Date().toISOString(),
+                paymentId,
+                signature,
+            });
+            return { status: 'FAILED', message: 'Signature verification failed' };
+        }
+        this.logger.log(`Signature verification SUCCESS for Order ID: ${orderId}`);
+        let paymentMethod = 'gateway';
+        let fullPayload = { verifiedViaSignature: true };
         try {
-            this.logger.log(`Creating Cashfree order for ${orderId}`);
-            const response = await axios_1.default.post(`${apiUrl}/orders`, {
-                order_id: orderId,
-                order_amount: app.amountPaid,
-                order_currency: 'INR',
-                customer_details: {
-                    customer_id: app.customerPhone,
-                    customer_name: app.customerName,
-                    customer_email: app.customerEmail,
-                    customer_phone: app.customerPhone,
-                },
-                order_meta: {
-                    return_url: `http://localhost:5000/index.html?track=${applicationId}`,
-                    notify_url: `${this.configService.get('BACKEND_WEBHOOK_URL', 'http://localhost:3000')}/payments/webhook`,
-                },
-            }, {
-                headers: {
-                    'x-client-id': appId,
-                    'x-client-secret': secretKey,
-                    'x-api-version': '2023-08-01',
-                    'Content-Type': 'application/json',
-                },
-            });
-            return {
-                payment_session_id: response.data.payment_session_id,
-                order_id: orderId,
-                amount: app.amountPaid,
-                cf_order_id: response.data.cf_order_id,
-            };
+            const keyId = this.configService.get('RAZORPAY_KEY_ID');
+            const authHeader = `Basic ${Buffer.from(`${keyId}:${secret}`).toString('base64')}`;
+            const response = await axios_1.default.get(`https://api.razorpay.com/v1/payments/${paymentId}`, { headers: { Authorization: authHeader } });
+            if (response.data) {
+                paymentMethod = response.data.method || 'gateway';
+                fullPayload = { ...response.data, verifiedViaSignature: true };
+            }
         }
-        catch (error) {
-            this.logger.error(`Cashfree API Error: ${error.response?.data?.message || error.message}`);
-            return {
-                is_simulated: true,
-                order_id: orderId,
-                amount: app.amountPaid,
-                payment_session_id: `SIM-SESSION-${orderId}`,
-            };
+        catch (err) {
+            this.logger.warn(`Could not pull payment info from Razorpay API: ${err.message}`);
         }
+        await this.markPaymentSuccessful(orderId, paymentId, paymentMethod, {
+            ...fullPayload,
+            paidTime: new Date().toISOString(),
+        });
+        return { status: 'SUCCESS', transactionId: paymentId };
     }
-    verifyWebhookSignature(signature, timestamp, rawBody) {
-        const secretKey = this.configService.get('CASHFREE_SECRET_KEY');
-        if (!secretKey)
-            return false;
-        const data = timestamp + rawBody;
-        const computedSignature = crypto
-            .createHmac('sha256', secretKey)
-            .update(data)
-            .digest('base64');
-        return computedSignature === signature;
-    }
-    async handleWebhook(payload) {
-        this.logger.log(`Received payment webhook payload: ${JSON.stringify(payload)}`);
-        const { data } = payload;
-        if (!data)
-            return { status: 'ignored' };
-        const orderId = data.order?.order_id;
-        const paymentStatus = data.payment?.payment_status;
-        const transactionId = data.payment?.cf_payment_id || `TXN-${Date.now()}`;
-        const paymentMethod = data.payment?.payment_method?.type || 'upi';
-        if (!orderId || !paymentStatus) {
-            return { status: 'invalid_data' };
-        }
-        if (paymentStatus === 'SUCCESS') {
-            return this.markPaymentSuccessful(orderId, transactionId, paymentMethod, data);
-        }
-        else if (paymentStatus === 'FAILED') {
-            return this.markPaymentFailed(orderId, data);
-        }
-        return { status: 'unhandled_event' };
-    }
-    async verifyPaymentDirectly(orderId) {
-        const payment = await this.prisma.payment.findUnique({
+    async getPaymentsForOrder(orderId) {
+        let payment = await this.prisma.payment.findUnique({
             where: { orderId },
             include: { application: true },
         });
         if (!payment) {
-            throw new common_1.NotFoundException(`Payment for order ${orderId} not found`);
+            throw new common_1.NotFoundException(`Payment record for order ${orderId} not found`);
         }
-        if (payment.status === 'SUCCESS') {
-            return { status: 'SUCCESS', transactionId: payment.transactionId };
-        }
-        const appId = this.configService.get('CASHFREE_APP_ID');
-        const secretKey = this.configService.get('CASHFREE_SECRET_KEY');
-        const apiUrl = this.configService.get('CASHFREE_API_URL');
-        try {
-            const response = await axios_1.default.get(`${apiUrl}/orders/${orderId}`, {
-                headers: {
-                    'x-client-id': appId,
-                    'x-client-secret': secretKey,
-                    'x-api-version': '2023-08-01',
-                },
-            });
-            const orderStatus = response.data.order_status;
-            if (orderStatus === 'PAID') {
-                const paymentsResponse = await axios_1.default.get(`${apiUrl}/orders/${orderId}/payments`, {
-                    headers: {
-                        'x-client-id': appId,
-                        'x-client-secret': secretKey,
-                        'x-api-version': '2023-08-01',
-                    },
-                });
-                const successPayment = paymentsResponse.data.find((p) => p.payment_status === 'SUCCESS');
-                if (successPayment) {
-                    await this.markPaymentSuccessful(orderId, successPayment.cf_payment_id, successPayment.payment_group, successPayment);
-                    return { status: 'SUCCESS', transactionId: successPayment.cf_payment_id };
+        if (payment.status === 'PENDING') {
+            try {
+                const keyId = this.configService.get('RAZORPAY_KEY_ID');
+                const keySecret = this.configService.get('RAZORPAY_KEY_SECRET');
+                if (keyId && keySecret) {
+                    const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`;
+                    const response = await axios_1.default.get(`https://api.razorpay.com/v1/orders/${orderId}/payments`, { headers: { Authorization: authHeader } });
+                    const items = response.data.items || [];
+                    const capturedPayment = items.find((p) => p.status === 'captured');
+                    const failedPayment = items.find((p) => p.status === 'failed');
+                    if (capturedPayment) {
+                        await this.markPaymentSuccessful(orderId, capturedPayment.id, capturedPayment.method || 'gateway', { ...capturedPayment, paidTime: new Date().toISOString() });
+                        payment = await this.prisma.payment.findUnique({ where: { orderId }, include: { application: true } });
+                    }
+                    else if (failedPayment) {
+                        await this.markPaymentFailed(orderId, {
+                            ...failedPayment,
+                            failureReason: failedPayment.error_description || 'Razorpay payment failed status',
+                            failedAt: new Date().toISOString(),
+                        });
+                        payment = await this.prisma.payment.findUnique({ where: { orderId }, include: { application: true } });
+                    }
                 }
             }
+            catch (err) {
+                this.logger.error(`Error fetching payments from Razorpay API: ${err.message}`);
+            }
         }
-        catch (err) {
-            this.logger.error(`Direct payment verification failed: ${err.message}`);
+        return {
+            status: payment.status,
+            paymentMethod: payment.paymentMethod || 'unknown',
+            paymentId: payment.transactionId || 'none',
+            amount: payment.amount,
+            timestamp: payment.updatedAt,
+        };
+    }
+    verifyWebhookSignature(signature, rawBody) {
+        const secret = this.configService.get('RAZORPAY_WEBHOOK_SECRET');
+        if (!secret) {
+            this.logger.warn('RAZORPAY_WEBHOOK_SECRET is not configured. Webhook signature check skipped.');
+            return true;
         }
-        return { status: payment.status };
+        const computedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(rawBody)
+            .digest('hex');
+        return computedSignature === signature;
+    }
+    async handleWebhook(payload) {
+        this.logger.log(`Received payment webhook event: ${payload.event}`);
+        const event = payload.event;
+        if (event === 'payment.captured' || event === 'order.paid') {
+            const orderEntity = payload.payload?.order?.entity;
+            const paymentEntity = payload.payload?.payment?.entity;
+            const orderId = orderEntity?.id || paymentEntity?.order_id;
+            const transactionId = paymentEntity?.id || `TXN-${Date.now()}`;
+            const paymentMethod = paymentEntity?.method || 'gateway';
+            if (orderId) {
+                return this.markPaymentSuccessful(orderId, transactionId, paymentMethod, {
+                    ...payload.payload,
+                    paidTime: new Date().toISOString(),
+                });
+            }
+        }
+        else if (event === 'payment.failed') {
+            const paymentEntity = payload.payload?.payment?.entity;
+            const orderId = paymentEntity?.order_id;
+            if (orderId) {
+                return this.markPaymentFailed(orderId, {
+                    ...payload.payload,
+                    failureReason: paymentEntity.error_description || 'Payment failed event from webhook',
+                    failedAt: new Date().toISOString(),
+                });
+            }
+        }
+        return { status: 'ignored' };
+    }
+    async verifyPaymentDirectly(orderId) {
+        const lookup = await this.getPaymentsForOrder(orderId);
+        return {
+            status: lookup.status,
+            transactionId: lookup.paymentId,
+        };
     }
     async markPaymentSuccessful(orderId, transactionId, paymentMethod, gatewayResponse) {
         const payment = await this.prisma.payment.findUnique({

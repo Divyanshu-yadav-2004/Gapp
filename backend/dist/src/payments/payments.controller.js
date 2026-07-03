@@ -12,7 +12,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PaymentsController = void 0;
+exports.OrdersController = exports.PaymentsController = void 0;
 const common_1 = require("@nestjs/common");
 const payments_service_1 = require("./payments.service");
 const swagger_1 = require("@nestjs/swagger");
@@ -26,10 +26,16 @@ let PaymentsController = class PaymentsController {
         }
         return this.paymentsService.createOrder(applicationId);
     }
-    async handleWebhook(signature, timestamp, payload) {
-        if (signature && timestamp) {
+    verifySignature(orderId, paymentId, signature) {
+        if (!orderId || !paymentId || !signature) {
+            throw new common_1.BadRequestException('razorpay_order_id, razorpay_payment_id, and razorpay_signature are required');
+        }
+        return this.paymentsService.verifyPaymentSignature(orderId, paymentId, signature);
+    }
+    async handleWebhook(signature, payload) {
+        if (signature) {
             const rawBody = JSON.stringify(payload);
-            const isVerified = this.paymentsService.verifyWebhookSignature(signature, timestamp, rawBody);
+            const isVerified = this.paymentsService.verifyWebhookSignature(signature, rawBody);
             if (!isVerified) {
                 throw new common_1.BadRequestException('Invalid webhook signature');
             }
@@ -49,7 +55,7 @@ let PaymentsController = class PaymentsController {
 exports.PaymentsController = PaymentsController;
 __decorate([
     (0, common_1.Post)('create-order'),
-    (0, swagger_1.ApiOperation)({ summary: 'Create a new Cashfree PG payment order session (Public)' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Create a new Razorpay payment order (Public)' }),
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',
@@ -65,14 +71,35 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], PaymentsController.prototype, "createOrder", null);
 __decorate([
+    (0, common_1.Post)('verify-signature'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Verify Razorpay payment signature' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                razorpay_order_id: { type: 'string' },
+                razorpay_payment_id: { type: 'string' },
+                razorpay_signature: { type: 'string' },
+            },
+            required: ['razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature'],
+        },
+    }),
+    __param(0, (0, common_1.Body)('razorpay_order_id')),
+    __param(1, (0, common_1.Body)('razorpay_payment_id')),
+    __param(2, (0, common_1.Body)('razorpay_signature')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], PaymentsController.prototype, "verifySignature", null);
+__decorate([
     (0, common_1.Post)('webhook'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: 'Cashfree Webhook Endpoint (Callback verification)' }),
-    __param(0, (0, common_1.Headers)('x-webhook-signature')),
-    __param(1, (0, common_1.Headers)('x-webhook-timestamp')),
-    __param(2, (0, common_1.Body)()),
+    (0, swagger_1.ApiOperation)({ summary: 'Razorpay Webhook Endpoint (Callback verification)' }),
+    __param(0, (0, common_1.Headers)('x-razorpay-signature')),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], PaymentsController.prototype, "handleWebhook", null);
 __decorate([
@@ -108,4 +135,29 @@ exports.PaymentsController = PaymentsController = __decorate([
     (0, common_1.Controller)('payments'),
     __metadata("design:paramtypes", [payments_service_1.PaymentsService])
 ], PaymentsController);
+let OrdersController = class OrdersController {
+    constructor(paymentsService) {
+        this.paymentsService = paymentsService;
+    }
+    getPaymentsForOrder(orderId) {
+        if (!orderId) {
+            throw new common_1.BadRequestException('orderId is required');
+        }
+        return this.paymentsService.getPaymentsForOrder(orderId);
+    }
+};
+exports.OrdersController = OrdersController;
+__decorate([
+    (0, common_1.Get)(':orderId/payments'),
+    (0, swagger_1.ApiOperation)({ summary: 'Lookup payments for a specific Razorpay order' }),
+    __param(0, (0, common_1.Param)('orderId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], OrdersController.prototype, "getPaymentsForOrder", null);
+exports.OrdersController = OrdersController = __decorate([
+    (0, swagger_1.ApiTags)('Orders'),
+    (0, common_1.Controller)('v1/orders'),
+    __metadata("design:paramtypes", [payments_service_1.PaymentsService])
+], OrdersController);
 //# sourceMappingURL=payments.controller.js.map
