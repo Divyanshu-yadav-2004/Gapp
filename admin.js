@@ -276,6 +276,74 @@ async function renderAppDetailsPane(id) {
         else if (uiStatus === 'Approved') badgeClass = 'approved';
         else if (uiStatus === 'Rejected') badgeClass = 'rejected';
 
+        // Payment details box layout definition
+        let paymentStatusHtml = '';
+        if (app.amountPaid > 0) {
+            const payment = app.payments && app.payments[0];
+            const pStatus = payment ? payment.status : 'PENDING';
+            let pStatusLabel = pStatus;
+            let pStatusBadgeClass = 'pending';
+            if (pStatus === 'SENT') {
+                pStatusLabel = 'Sent (WhatsApp Confirmed)';
+                pStatusBadgeClass = 'processing';
+            } else if (pStatus === 'VERIFIED' || pStatus === 'SUCCESS') {
+                pStatusLabel = 'Verified & Completed';
+                pStatusBadgeClass = 'approved';
+            } else if (pStatus === 'REJECTED') {
+                pStatusLabel = 'Rejected';
+                pStatusBadgeClass = 'rejected';
+            } else if (pStatus === 'FAILED') {
+                pStatusLabel = 'Failed';
+                pStatusBadgeClass = 'rejected';
+            }
+
+            // If payment is pending or sent, trigger the seen logger in background
+            if (pStatus === 'PENDING' || pStatus === 'SENT') {
+                window.api.markAsSeen(app.id).catch(err => console.warn('Failed to log payment seen action:', err.message));
+            }
+
+            let actionButtonsHtml = '';
+            if (pStatus === 'PENDING' || pStatus === 'SENT') {
+                actionButtonsHtml = `
+                    <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+                        <button class="btn btn-success" onclick="verifyAdminPayment('${app.id}')" style="background-color: #059669; border-color: #059669; color: #ffffff; padding: 10px 16px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; display: flex; align-items: center; gap: 6px;">
+                            ✓ Confirm & Verify Payment
+                        </button>
+                        <button class="btn btn-secondary" onclick="rejectAdminPayment('${app.id}')" style="background-color: #dc2626; border-color: #dc2626; color: #ffffff; padding: 10px 16px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; display: flex; align-items: center; gap: 6px;">
+                            ✗ Reject Payment
+                        </button>
+                    </div>
+                `;
+            } else {
+                actionButtonsHtml = `
+                    <div style="font-size: 12.5px; color: var(--text-muted); font-style: italic; margin-top: 8px;">
+                        Manual verification complete. No further actions required.
+                    </div>
+                `;
+            }
+
+            paymentStatusHtml = `
+                <div class="detail-info-box" style="border-left: 4px solid #10b981; background: var(--bg-app); padding: 18px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); border-left-width: 4px;">
+                    <h4 style="margin-top: 0; color: var(--text-color); font-size: 14px; margin-bottom: 12px; font-weight: 700;">Payment Verification Center</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; font-size: 13px; color: var(--text-color);">
+                        <div>
+                            <span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Fee Amount:</span>
+                            <strong style="font-size: 15px; color: var(--primary);">₹${payment ? payment.amount : app.amountPaid}.00</strong>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Verification Status:</span>
+                            <span class="status-badge ${pStatusBadgeClass}" style="display: inline-block; font-size: 11px;">${pStatusLabel}</span>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-muted); display: block; margin-bottom: 2px;">Transaction Reference:</span>
+                            <code style="background: var(--border-color); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 11.5px;">${(payment && payment.transactionId) ? payment.transactionId : 'N/A'}</code>
+                        </div>
+                    </div>
+                    ${actionButtonsHtml}
+                </div>
+            `;
+        }
+
         // Rerender Detail HTML structure
         content.innerHTML = `
             <div class="detail-header">
@@ -297,6 +365,9 @@ async function renderAppDetailsPane(id) {
                     ${docsHtml}
                 </div>
             </div>
+            
+            ${paymentStatusHtml}
+            
             <!-- Employee Status Action Form -->
             <div class="detail-actions-panel">
                 <h4>Change Processing Status</h4>
@@ -417,4 +488,38 @@ function openDocumentModal(url) {
             </body>
         </html>
     `);
+}
+
+// Verify manual payment
+async function verifyAdminPayment(appId) {
+    if (!confirm('Are you sure you want to verify and confirm this payment manually? This will mark the payment as Completed and send the receipt emails.')) {
+        return;
+    }
+    try {
+        await window.api.confirmPaymentManually(appId);
+        alert('Payment verified and confirmed successfully!');
+        await window.initAdminDashboard();
+        if (selectedAppId === appId) {
+            await renderAppDetailsPane(appId);
+        }
+    } catch (err) {
+        alert('Failed to verify payment: ' + err.message);
+    }
+}
+
+// Reject manual payment
+async function rejectAdminPayment(appId) {
+    if (!confirm('Are you sure you want to reject this payment request?')) {
+        return;
+    }
+    try {
+        await window.api.rejectPaymentManually(appId);
+        alert('Payment request rejected successfully.');
+        await window.initAdminDashboard();
+        if (selectedAppId === appId) {
+            await renderAppDetailsPane(appId);
+        }
+    } catch (err) {
+        alert('Failed to reject payment: ' + err.message);
+    }
 }

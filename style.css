@@ -655,7 +655,7 @@ body.admin-mode-active .switch-handle {
 }
 
 .fade-in-card {
-    animation: cardFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: cardFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     opacity: 0;
     transform: translateY(12px);
 }
@@ -1350,7 +1350,7 @@ body.admin-mode-active .switch-handle {
 }
 .wizard-step-panel.active {
     display: block;
-    animation: fadeIn 0.4s ease;
+    animation: fadeIn 0.15s ease;
 }
 @keyframes fadeIn {
     from { opacity: 0; }

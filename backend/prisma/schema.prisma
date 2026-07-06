@@ -21,8 +21,11 @@ enum ApplicationStatus {
 
 enum PaymentStatus {
   PENDING
+  SENT
   SUCCESS
   FAILED
+  VERIFIED
+  REJECTED
 }
 
 model User {
@@ -88,4 +91,12 @@ model StatusHistory {
   changedBy     String            // User email or ID who made the change
   comment       String?
   createdAt     DateTime          @default(now())
+}
+
+model PaymentLog {
+  id            String   @id @default(uuid())
+  applicationId String
+  action        String   // "WHATSAPP_SENT", "VERIFIED", "REJECTED", "SEEN"
+  timestamp     DateTime @default(now())
+  performedBy   String   // "user" or staff email
 }

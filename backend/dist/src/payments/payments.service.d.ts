@@ -43,4 +43,36 @@ export declare class PaymentsService {
     simulatePaymentResult(orderId: string, status: 'success' | 'fail'): Promise<{
         status: string;
     }>;
+    getPaymentConfig(): {
+        upiId: string;
+        payeeName: string;
+        whatsappNumber: string;
+    };
+    logWhatsAppSent(applicationId: string): Promise<{
+        status: string;
+        payment?: undefined;
+    } | {
+        status: string;
+        payment: {
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            status: import(".prisma/client").$Enums.PaymentStatus;
+            transactionId: string | null;
+            orderId: string;
+            amount: number;
+            paymentMethod: string | null;
+            gatewayResponse: import("@prisma/client/runtime/library").JsonValue | null;
+            applicationId: string;
+        };
+    }>;
+    markAsSeen(applicationId: string, staffEmail: string): Promise<{
+        status: string;
+    }>;
+    confirmPaymentManually(applicationId: string, staffEmail: string): Promise<{
+        status: string;
+    }>;
+    rejectPaymentManually(applicationId: string, staffEmail: string): Promise<{
+        status: string;
+    }>;
 }

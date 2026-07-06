@@ -354,6 +354,152 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
             return this.markPaymentFailed(orderId, { simulated: true });
         }
     }
+    getPaymentConfig() {
+        return {
+            upiId: this.configService.get('PAYEE_UPI_ID', 'easycafe@upi'),
+            payeeName: this.configService.get('PAYEE_NAME', 'EasyCafe Services'),
+            whatsappNumber: this.configService.get('ADMIN_WHATSAPP', '919988776655'),
+        };
+    }
+    async logWhatsAppSent(applicationId) {
+        const payment = await this.prisma.payment.findFirst({
+            where: { applicationId },
+        });
+        if (!payment) {
+            throw new common_1.NotFoundException(`Payment record for application ${applicationId} not found`);
+        }
+        if (payment.status === 'SUCCESS' || payment.status === 'VERIFIED') {
+            return { status: 'already_verified' };
+        }
+        const updatedPayment = await this.prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: 'SENT' },
+        });
+        await this.prisma.paymentLog.create({
+            data: {
+                applicationId,
+                action: 'WHATSAPP_SENT',
+                performedBy: 'user',
+            },
+        });
+        this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+            id: applicationId,
+            paymentStatus: 'Sent',
+        });
+        this.notificationGateway.sendToAdmins('payment:update', {
+            applicationId,
+            status: 'SENT',
+        });
+        return { status: 'success', payment: updatedPayment };
+    }
+    async markAsSeen(applicationId, staffEmail) {
+        const existingSeenLog = await this.prisma.paymentLog.findFirst({
+            where: { applicationId, action: 'SEEN', performedBy: staffEmail },
+        });
+        if (!existingSeenLog) {
+            await this.prisma.paymentLog.create({
+                data: {
+                    applicationId,
+                    action: 'SEEN',
+                    performedBy: staffEmail,
+                },
+            });
+        }
+        return { status: 'success' };
+    }
+    async confirmPaymentManually(applicationId, staffEmail) {
+        const app = await this.prisma.application.findUnique({
+            where: { id: applicationId },
+        });
+        if (!app) {
+            throw new common_1.NotFoundException(`Application ${applicationId} not found`);
+        }
+        const payment = await this.prisma.payment.findFirst({
+            where: { applicationId },
+        });
+        if (!payment) {
+            throw new common_1.NotFoundException(`Payment record for application ${applicationId} not found`);
+        }
+        if (payment.status === 'VERIFIED' || payment.status === 'SUCCESS') {
+            return { status: 'already_completed' };
+        }
+        const txnId = `MANUAL-CONFIRM-${Date.now()}`;
+        await this.prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+                status: 'VERIFIED',
+                transactionId: txnId,
+                paymentMethod: 'upi-qr',
+            },
+        });
+        const updatedApp = await this.prisma.application.update({
+            where: { id: applicationId },
+            data: {
+                paymentStatus: 'Paid',
+            },
+        });
+        await this.prisma.paymentLog.create({
+            data: {
+                applicationId,
+                action: 'VERIFIED',
+                performedBy: staffEmail,
+            },
+        });
+        const whatsappLog = await this.prisma.paymentLog.findFirst({
+            where: { applicationId, action: 'WHATSAPP_SENT' },
+        });
+        const whatsappStatus = whatsappLog ? 'Confirmed via WhatsApp (clicked button)' : 'Manual override (button not clicked)';
+        await this.emailService.sendUserPaymentReceiptConfirmedEmail(updatedApp.customerEmail, updatedApp.customerName, payment.amount, applicationId);
+        const adminEmail = this.configService.get('ADMIN_EMAIL');
+        if (adminEmail) {
+            await this.emailService.sendAdminPaymentReceiptNotificationEmail(adminEmail, updatedApp.customerName, updatedApp.customerEmail, payment.amount, updatedApp.serviceName, new Date(), whatsappStatus);
+        }
+        this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+            id: applicationId,
+            paymentStatus: 'Paid',
+        });
+        this.notificationGateway.sendToAdmins('payment:success', {
+            transactionId: txnId,
+            customerName: updatedApp.customerName,
+            serviceName: updatedApp.serviceName,
+            amount: payment.amount,
+            paymentDate: new Date(),
+            status: 'Paid',
+        });
+        return { status: 'success' };
+    }
+    async rejectPaymentManually(applicationId, staffEmail) {
+        const payment = await this.prisma.payment.findFirst({
+            where: { applicationId },
+        });
+        if (!payment) {
+            throw new common_1.NotFoundException(`Payment record for application ${applicationId} not found`);
+        }
+        await this.prisma.payment.update({
+            where: { id: payment.id },
+            data: { status: 'REJECTED' },
+        });
+        await this.prisma.application.update({
+            where: { id: applicationId },
+            data: { paymentStatus: 'Failed' },
+        });
+        await this.prisma.paymentLog.create({
+            data: {
+                applicationId,
+                action: 'REJECTED',
+                performedBy: staffEmail,
+            },
+        });
+        this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+            id: applicationId,
+            paymentStatus: 'Failed',
+        });
+        this.notificationGateway.sendToAdmins('payment:update', {
+            applicationId,
+            status: 'REJECTED',
+        });
+        return { status: 'success' };
+    }
 };
 exports.PaymentsService = PaymentsService;
 exports.PaymentsService = PaymentsService = PaymentsService_1 = __decorate([

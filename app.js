@@ -8,6 +8,7 @@ let selectedPanServiceKey = 'new';
 let selectedGumastaServiceKey = 'individual';
 let currentOrderId = null;
 let currentApplicationId = null;
+let activePaymentConfig = null;
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
@@ -1763,30 +1764,63 @@ async function wizardNext(fromStep) {
                 navigateTo('receipt-section');
                 return;
             } else {
-                // Initiate Order in backend
-                const order = await window.api.createPaymentOrder(application.id);
-                currentOrderId = order.order_id;
+                // UPI Manual Payment — no payment order needed
+                // Skip createPaymentOrder (Razorpay legacy) — show QR directly
 
                 // Update payment screen info
                 const payServiceName = document.getElementById('payment-service-name');
                 const payFeeAmount = document.getElementById('payment-fee-amount');
                 const payFeeTotal = document.getElementById('payment-fee-total');
-                const upiPayAmount = document.getElementById('upi-pay-amount');
                 
                 if (payServiceName) payServiceName.textContent = currentService.name;
                 if (payFeeAmount) payFeeAmount.textContent = `₹${currentService.fee}`;
                 if (payFeeTotal) payFeeTotal.textContent = `₹${currentService.fee}`;
-                if (upiPayAmount) upiPayAmount.textContent = `₹${currentService.fee}`;
 
-                // Dynamic UPI QR Code generation with order reference
-                const upiQrImage = document.getElementById('paytm-qr-dynamic-image');
-                if (upiQrImage) {
-                    const fee = currentService.fee;
-                    const merchantVpa = 'paytmqr6wi94q@ptys';
-                    const merchantName = 'SUCCESS%20MP%20ONLINE';
-                    const upiUri = `upi://pay?pa=${merchantVpa}&pn=${merchantName}&am=${fee}&tr=${currentOrderId}&cu=INR`;
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUri)}`;
-                    upiQrImage.src = qrUrl;
+                // Fetch Payment Config and update UI dynamically
+                try {
+                    const payConfig = await window.api.getPaymentConfig();
+                    activePaymentConfig = payConfig;
+                    
+                    // QR Integrity Check: Ensure UPI VPA and match amount
+                    if (!payConfig.upiId) {
+                        throw new Error("UPI ID is not configured on the server.");
+                    }
+                    
+                    const payeeName = payConfig.payeeName || 'EasyCafe Services';
+                    const upiId = payConfig.upiId;
+                    const amountVal = currentService.fee;
+                    
+                    // Update UI elements
+                    const payeeDisplay = document.getElementById('upi-payee-display-name');
+                    const upiIdDisplay = document.getElementById('upi-id-display-text');
+                    const upiQrImage = document.getElementById('upi-payment-qr');
+                    
+                    if (payeeDisplay) payeeDisplay.textContent = payeeName;
+                    if (upiIdDisplay) upiIdDisplay.textContent = upiId;
+                    
+                    // QR is now a static image (assets/paytm_qr.jpg) — no need to regenerate.
+                    // The upiUri is still built so the WhatsApp confirmation message carries the correct UPI ID.
+                    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(amountVal)}&cu=INR&tn=${encodeURIComponent('App-' + application.id)}`;
+                    console.log('[Payment] UPI URI (for reference):', upiUri);
+                    // Static QR already shows the correct code — no src update needed.
+                    
+                    // Reset click/view states of buttons and cards
+                    const confirmBtn = document.getElementById('whatsapp-confirm-btn');
+                    if (confirmBtn) {
+                        confirmBtn.disabled = false;
+                        confirmBtn.style.opacity = '1';
+                        confirmBtn.style.cursor = 'pointer';
+                    }
+                    const successCard = document.getElementById('payment-sent-success-card');
+                    const qrContainer = document.getElementById('upi-qr-payment-container');
+                    if (successCard) successCard.classList.add('hidden');
+                    if (qrContainer) qrContainer.classList.remove('hidden');
+                    const backBtn = document.getElementById('payment-back-btn');
+                    if (backBtn) backBtn.classList.remove('hidden');
+
+                } catch (err) {
+                    console.error("Failed to load payment config:", err);
+                    alert("Error initializing payment options: " + err.message);
                 }
 
                 // Socket.io room join
@@ -1906,7 +1940,7 @@ async function handlePaymentSubmit() {
     }
 
     if (selectedPayMethod === 'gateway') {
-        await payViaCashfreeGateway();
+        await payViaRazorpayGateway();
         return;
     }
 
@@ -1936,12 +1970,17 @@ async function handlePaymentSubmit() {
     await checkPaymentStatus();
 }
 
-// ─── Pay via Secure Cashfree Gateway ──────────────────────────────────────────
-async function payViaCashfreeGateway() {
+// ─── Pay via Secure Razorpay Gateway ──────────────────────────────────────────
+async function payViaRazorpayGateway() {
     if (!currentApplicationId) {
         alert('Application ID is missing. Please restart the submission process.');
         return;
     }
+
+    const payBtn = document.getElementById('pay-gateway-btn');
+    const payBtnText = document.getElementById('pay-gateway-btn-text');
+    if (payBtn) payBtn.disabled = true;
+    if (payBtnText) payBtnText.textContent = 'Opening Secure Gateway...';
 
     const overlay = document.getElementById('payment-processing');
     if (overlay) {
@@ -1954,30 +1993,96 @@ async function payViaCashfreeGateway() {
 
     try {
         const sessionData = await window.api.createPaymentOrder(currentApplicationId);
-        if (overlay) overlay.classList.add('hidden');
+        
+        if (typeof Razorpay !== 'undefined') {
+            const options = {
+                key: sessionData.key_id,
+                amount: Math.round(sessionData.amount * 100), // in paise
+                currency: sessionData.currency || 'INR',
+                name: 'EasyCafe Portal',
+                description: `Fee payment for Application ${currentApplicationId}`,
+                order_id: sessionData.order_id,
+                prefill: {
+                    name: sessionData.customer_name || '',
+                    email: sessionData.customer_email || '',
+                    contact: sessionData.customer_phone || ''
+                },
+                theme: {
+                    color: '#4f46e5'
+                },
+                handler: async function (response) {
+                    if (overlay) {
+                        const title = document.getElementById('payment-processing-title');
+                        const desc = document.getElementById('payment-processing-desc');
+                        if (title) title.textContent = 'Verifying Transaction...';
+                        if (desc) desc.textContent = 'Backend is verifying payment signature...';
+                        overlay.classList.remove('hidden');
+                    }
+                    try {
+                        const verifyResult = await window.api.verifyPaymentSignature({
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature
+                        });
+                        
+                        if (verifyResult.status === 'SUCCESS') {
+                            const application = await window.api.trackApplication(currentApplicationId);
+                            if (overlay) overlay.classList.add('hidden');
+                            
+                            document.getElementById('rec-id-val').textContent = application.id;
+                            document.getElementById('rec-date-val').textContent = new Date(application.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                            document.getElementById('rec-service-name').textContent = currentService.name;
+                            document.getElementById('rec-client-name').textContent = application.customerName;
+                            document.getElementById('rec-client-phone').textContent = application.customerPhone;
+                            document.getElementById('rec-amount-paid').textContent = `₹${application.amountPaid}.00`;
+                            document.getElementById('rec-amount-total').textContent = `₹${application.amountPaid}.00`;
+                            document.getElementById('rec-timeline-val').textContent = application.completionTimeline;
+                            
+                            navigateTo('receipt-section');
+                        } else {
+                            if (overlay) overlay.classList.add('hidden');
+                            if (payBtn) payBtn.disabled = false;
+                            if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
+                            alert('Payment verification failed: ' + (verifyResult.message || 'unknown error') + '. Please try checking the status manually.');
+                        }
+                    } catch (err) {
+                        if (overlay) overlay.classList.add('hidden');
+                        if (payBtn) payBtn.disabled = false;
+                        if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
+                        alert('Verification call failed: ' + err.message);
+                    }
+                },
+                modal: {
+                    ondismiss: function () {
+                        if (overlay) overlay.classList.add('hidden');
+                        if (payBtn) payBtn.disabled = false;
+                        if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
+                        showPaymentNotification('error', 'Payment cancelled by user. You can try again.');
+                    }
+                }
+            };
 
-        // Check if sandbox simulated session fallback
-        if (sessionData.is_simulated) {
-            // Show UPI simulation modal instead for easy sandbox dev checks
-            showUpiSimulationModal('other', 'Gateway Checkout Sim', 'customer@gateway', sessionData.amount, sessionData.order_id);
+            if (overlay) overlay.classList.add('hidden');
+            const rzp = new Razorpay(options);
+            
+            rzp.on('payment.failed', function (response) {
+                if (overlay) overlay.classList.add('hidden');
+                if (payBtn) payBtn.disabled = false;
+                if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
+                alert('Payment Failed: ' + (response.error.description || 'Unknown error occurred.'));
+            });
+            
+            rzp.open();
         } else {
-            // Real Cashfree SDK checkout redirect (sandbox/production)
-            if (typeof Cashfree !== 'undefined') {
-                const cashfree = Cashfree({
-                    mode: "sandbox" // Change to "production" in prod env
-                });
-                
-                cashfree.checkout({
-                    paymentSessionId: sessionData.payment_session_id,
-                    returnUrl: `http://localhost:5000/index.html?track=${currentApplicationId}`
-                });
-            } else {
-                alert('Cashfree Gateway SDK was not loaded. Simulating checkout flow...');
-                showUpiSimulationModal('other', 'Gateway Checkout Fallback', 'customer@gateway', sessionData.amount, sessionData.order_id);
-            }
+            if (overlay) overlay.classList.add('hidden');
+            if (payBtn) payBtn.disabled = false;
+            if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
+            alert('Razorpay SDK failed to load. Please verify your internet connection.');
         }
     } catch (error) {
         if (overlay) overlay.classList.add('hidden');
+        if (payBtn) payBtn.disabled = false;
+        if (payBtnText) payBtnText.textContent = 'Pay Securely with Razorpay';
         alert('Gateway initialization failed: ' + error.message);
     }
 }
@@ -2309,3 +2414,58 @@ window.addEventListener('online', () => {
 
 // Also run a background sync check every 30 seconds
 setInterval(syncOfflineSubmissions, 30000);
+
+// ─── WhatsApp confirmation button click handler ──────────────────────────────
+async function handleWhatsAppConfirmation() {
+    if (!currentApplicationId) {
+        alert('Application ID is missing. Please restart the submission process.');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('whatsapp-confirm-btn');
+    const backBtn = document.getElementById('payment-back-btn');
+    if (confirmBtn) {
+        // Prevent spam: immediately disable button
+        confirmBtn.disabled = true;
+        confirmBtn.style.opacity = '0.5';
+        confirmBtn.style.cursor = 'not-allowed';
+    }
+
+    try {
+        // Log action on the backend
+        await window.api.logWhatsAppSent(currentApplicationId);
+
+        // Fetch application details to populate message
+        const app = await window.api.trackApplication(currentApplicationId);
+        
+        // Fetch config
+        const config = activePaymentConfig || await window.api.getPaymentConfig();
+        const phoneNumber = config.whatsappNumber || '919988776655';
+
+        // Prepare pre-filled message text
+        const message = `Hi I have completed the payment.\n\nName: ${app.customerName}\nEmail: ${app.customerEmail}\nAmount: ₹${app.amountPaid}\n\nPlease confirm my payment.`;
+
+        // Safe WhatsApp Encoding
+        const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+
+        // Open WhatsApp in a new tab/window
+        window.open(whatsappUrl, '_blank');
+
+        // Show Success UI on client page
+        const successCard = document.getElementById('payment-sent-success-card');
+        const qrContainer = document.getElementById('upi-qr-payment-container');
+
+        if (successCard) successCard.classList.remove('hidden');
+        if (qrContainer) qrContainer.classList.add('hidden');
+        if (backBtn) backBtn.classList.add('hidden'); // Keep user in success card state
+
+    } catch (error) {
+        console.error('Error logging WhatsApp confirmation:', error);
+        alert('Failed to initiate WhatsApp confirmation: ' + error.message);
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.cursor = 'pointer';
+        }
+    }
+}

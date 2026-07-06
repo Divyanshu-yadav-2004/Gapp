@@ -290,6 +290,47 @@ class EasyCafeAPI {
     }
   }
 
+  // Verify Razorpay payment signature
+  async verifyPaymentSignature(paymentDetails) {
+    try {
+      return await this.fetchWithAuth('/payments/verify-signature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentDetails),
+      });
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Simulating payment signature verification...');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        
+        const orderId = paymentDetails.razorpay_order_id;
+        const mockDb = JSON.parse(localStorage.getItem('easycafe_mock_applications') || '{}');
+        const app = Object.values(mockDb).find(a => a.orderId === orderId);
+        if (app) {
+          app.status = 'PENDING';
+          app.paymentDetails = { status: 'SUCCESS', transactionId: paymentDetails.razorpay_payment_id || 'TXN-' + Date.now() };
+          app.updatedAt = new Date().toISOString();
+          mockDb[app.id] = app;
+          localStorage.setItem('easycafe_mock_applications', JSON.stringify(mockDb));
+        }
+
+        // Mark offline sync queue item as paid
+        const offlineQueue = JSON.parse(localStorage.getItem('easycafe_offline_submissions') || '[]');
+        const queueItem = offlineQueue.find(item => item.orderId === orderId);
+        if (queueItem) {
+          queueItem.isPaid = true;
+          localStorage.setItem('easycafe_offline_submissions', JSON.stringify(offlineQueue));
+        }
+
+        return {
+          status: 'SUCCESS',
+          transactionId: paymentDetails.razorpay_payment_id || 'TXN-MOCK-' + Date.now()
+        };
+      }
+      throw err;
+    }
+  }
+
   // Pull PG verify
   async verifyPayment(orderId) {
     try {
@@ -322,6 +363,119 @@ class EasyCafeAPI {
         }
 
         return { status: mockStatus };
+      }
+      throw err;
+    }
+  }
+
+  // Get manual payment config (cached after first fetch)
+  async getPaymentConfig() {
+    if (this._paymentConfigCache) return this._paymentConfigCache;
+    try {
+      const config = await this.fetchWithAuth('/payments/config');
+      this._paymentConfigCache = config;
+      return config;
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Returning simulated payment config...');
+        const fallback = {
+          upiId: 'paytmqr6wi94q@ptys',
+          payeeName: 'SUCCESS MP ONLINE',
+          whatsappNumber: '917415921990'
+        };
+        this._paymentConfigCache = fallback;
+        return fallback;
+      }
+      throw err;
+    }
+  }
+
+  // Log that whatsapp message button has been clicked
+  async logWhatsAppSent(applicationId) {
+    try {
+      return await this.fetchWithAuth(`/payments/whatsapp-sent/${applicationId}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Simulating whatsapp-sent logging...');
+        const mockDb = JSON.parse(localStorage.getItem('easycafe_mock_applications') || '{}');
+        const app = mockDb[applicationId];
+        if (app) {
+          app.paymentDetails = app.paymentDetails || {};
+          app.paymentDetails.status = 'SENT';
+          app.updatedAt = new Date().toISOString();
+          mockDb[applicationId] = app;
+          localStorage.setItem('easycafe_mock_applications', JSON.stringify(mockDb));
+        }
+        return { status: 'success' };
+      }
+      throw err;
+    }
+  }
+
+  // Mark payment request as seen by admin
+  async markAsSeen(applicationId) {
+    try {
+      return await this.fetchWithAuth(`/payments/seen/${applicationId}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Simulating seen log...');
+        return { status: 'success' };
+      }
+      throw err;
+    }
+  }
+
+  // Confirm payment manually (Admin)
+  async confirmPaymentManually(applicationId) {
+    try {
+      return await this.fetchWithAuth(`/payments/confirm/${applicationId}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Simulating manual payment confirmation...');
+        const mockDb = JSON.parse(localStorage.getItem('easycafe_mock_applications') || '{}');
+        const app = mockDb[applicationId];
+        if (app) {
+          app.paymentStatus = 'Paid';
+          app.status = 'PENDING_VERIFICATION'; // Let it remain pending operator verification
+          app.paymentDetails = app.paymentDetails || {};
+          app.paymentDetails.status = 'VERIFIED';
+          app.paymentDetails.transactionId = 'MANUAL-MOCK-' + Date.now();
+          app.updatedAt = new Date().toISOString();
+          mockDb[applicationId] = app;
+          localStorage.setItem('easycafe_mock_applications', JSON.stringify(mockDb));
+        }
+        return { status: 'success' };
+      }
+      throw err;
+    }
+  }
+
+  // Reject payment manually (Admin)
+  async rejectPaymentManually(applicationId) {
+    try {
+      return await this.fetchWithAuth(`/payments/reject/${applicationId}`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      if (this.isNetworkError(err)) {
+        console.warn('Backend server is offline. Simulating manual payment rejection...');
+        const mockDb = JSON.parse(localStorage.getItem('easycafe_mock_applications') || '{}');
+        const app = mockDb[applicationId];
+        if (app) {
+          app.paymentStatus = 'Failed';
+          app.paymentDetails = app.paymentDetails || {};
+          app.paymentDetails.status = 'REJECTED';
+          app.updatedAt = new Date().toISOString();
+          mockDb[applicationId] = app;
+          localStorage.setItem('easycafe_mock_applications', JSON.stringify(mockDb));
+        }
+        return { status: 'success' };
       }
       throw err;
     }

@@ -469,4 +469,222 @@ export class PaymentsService {
       return this.markPaymentFailed(orderId, { simulated: true });
     }
   }
+
+  /**
+   * Get manual payment configurations
+   */
+  getPaymentConfig() {
+    return {
+      upiId: this.configService.get<string>('PAYEE_UPI_ID', 'easycafe@upi'),
+      payeeName: this.configService.get<string>('PAYEE_NAME', 'EasyCafe Services'),
+      whatsappNumber: this.configService.get<string>('ADMIN_WHATSAPP', '919988776655'),
+    };
+  }
+
+  /**
+   * Log that user clicked the WhatsApp confirmation button
+   */
+  async logWhatsAppSent(applicationId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { applicationId },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment record for application ${applicationId} not found`);
+    }
+    if (payment.status === 'SUCCESS' || payment.status === 'VERIFIED') {
+      return { status: 'already_verified' };
+    }
+
+    // Update payment status to SENT
+    const updatedPayment = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'SENT' },
+    });
+
+    // Log the action
+    await this.prisma.paymentLog.create({
+      data: {
+        applicationId,
+        action: 'WHATSAPP_SENT',
+        performedBy: 'user',
+      },
+    });
+
+    // Emit updates
+    this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+      id: applicationId,
+      paymentStatus: 'Sent',
+    });
+
+    this.notificationGateway.sendToAdmins('payment:update', {
+      applicationId,
+      status: 'SENT',
+    });
+
+    return { status: 'success', payment: updatedPayment };
+  }
+
+  /**
+   * Log that admin has opened/seen the application details
+   */
+  async markAsSeen(applicationId: string, staffEmail: string) {
+    // Check if seen log already exists to prevent duplicate spamming
+    const existingSeenLog = await this.prisma.paymentLog.findFirst({
+      where: { applicationId, action: 'SEEN', performedBy: staffEmail },
+    });
+
+    if (!existingSeenLog) {
+      await this.prisma.paymentLog.create({
+        data: {
+          applicationId,
+          action: 'SEEN',
+          performedBy: staffEmail,
+        },
+      });
+    }
+    return { status: 'success' };
+  }
+
+  /**
+   * Manually confirm and verify the payment (updates DB, sends emails, triggers socket events)
+   */
+  async confirmPaymentManually(applicationId: string, staffEmail: string) {
+    const app = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+    });
+    if (!app) {
+      throw new NotFoundException(`Application ${applicationId} not found`);
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { applicationId },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment record for application ${applicationId} not found`);
+    }
+
+    if (payment.status === 'VERIFIED' || payment.status === 'SUCCESS') {
+      return { status: 'already_completed' };
+    }
+
+    const txnId = `MANUAL-CONFIRM-${Date.now()}`;
+
+    // Update payment record to VERIFIED / SUCCESS
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'VERIFIED',
+        transactionId: txnId,
+        paymentMethod: 'upi-qr',
+      },
+    });
+
+    // Update parent application paymentStatus to "Paid"
+    const updatedApp = await this.prisma.application.update({
+      where: { id: applicationId },
+      data: {
+        paymentStatus: 'Paid',
+      },
+    });
+
+    // Log the manual verification action
+    await this.prisma.paymentLog.create({
+      data: {
+        applicationId,
+        action: 'VERIFIED',
+        performedBy: staffEmail,
+      },
+    });
+
+    // Check if user sent WhatsApp message
+    const whatsappLog = await this.prisma.paymentLog.findFirst({
+      where: { applicationId, action: 'WHATSAPP_SENT' },
+    });
+    const whatsappStatus = whatsappLog ? 'Confirmed via WhatsApp (clicked button)' : 'Manual override (button not clicked)';
+
+    // Send receipt email to the user
+    await this.emailService.sendUserPaymentReceiptConfirmedEmail(
+      updatedApp.customerEmail,
+      updatedApp.customerName,
+      payment.amount,
+      applicationId
+    );
+
+    // Send notification email to the admin
+    const adminEmail = this.configService.get<string>('ADMIN_EMAIL');
+    if (adminEmail) {
+      await this.emailService.sendAdminPaymentReceiptNotificationEmail(
+        adminEmail,
+        updatedApp.customerName,
+        updatedApp.customerEmail,
+        payment.amount,
+        updatedApp.serviceName,
+        new Date(),
+        whatsappStatus
+      );
+    }
+
+    // Emit live WebSocket status update to the client tracking screen
+    this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+      id: applicationId,
+      paymentStatus: 'Paid',
+    });
+
+    // Emit live WebSocket refresh to the admin dashboard
+    this.notificationGateway.sendToAdmins('payment:success', {
+      transactionId: txnId,
+      customerName: updatedApp.customerName,
+      serviceName: updatedApp.serviceName,
+      amount: payment.amount,
+      paymentDate: new Date(),
+      status: 'Paid',
+    });
+
+    return { status: 'success' };
+  }
+
+  /**
+   * Manually reject the payment request
+   */
+  async rejectPaymentManually(applicationId: string, staffEmail: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { applicationId },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment record for application ${applicationId} not found`);
+    }
+
+    // Update payment record to REJECTED
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'REJECTED' },
+    });
+
+    // Update parent application paymentStatus to "Failed"
+    await this.prisma.application.update({
+      where: { id: applicationId },
+      data: { paymentStatus: 'Failed' },
+    });
+
+    // Log the rejection action
+    await this.prisma.paymentLog.create({
+      data: {
+        applicationId,
+        action: 'REJECTED',
+        performedBy: staffEmail,
+      },
+    });
+
+    // Emit live updates
+    this.notificationGateway.sendStatusUpdateToUser(applicationId, {
+      id: applicationId,
+      paymentStatus: 'Failed',
+    });
+
+    this.notificationGateway.sendToAdmins('payment:update', {
+      applicationId,
+      status: 'REJECTED',
+    });
+
+    return { status: 'success' };
+  }
 }

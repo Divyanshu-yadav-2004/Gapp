@@ -12,6 +12,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <!-- Razorpay Standard Checkout SDK -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -467,113 +469,84 @@
                             <button type="button" class="btn btn-primary" onclick="wizardNext(3)">Go to Payment</button>
                         </div>
                     </div>
-                    <!-- Step 4: Payments -->
                     <div class="wizard-step-panel" id="step-panel-4">
-                        <h3 class="panel-title">Secure Fee Payment</h3>
-                        <p class="panel-subtitle">Complete payment to send your files to our staff desk.</p>
+                        <h3 class="panel-title">UPI QR Fee Payment</h3>
+                        <p class="panel-subtitle">Scan the QR code using any UPI app to complete operator service fee payment.</p>
                         
-                        <div class="payment-layout">
-                            <div class="payment-bill">
-                                <span class="bill-label">Selected Service</span>
-                                <span class="bill-value" id="payment-service-name">PAN Card Registration</span>
-                                <div class="bill-divider"></div>
-                                <div class="bill-row">
-                                    <span>Operator Service Charge</span>
-                                    <span id="payment-fee-amount">â‚¹150</span>
+                        <div class="payment-layout" style="display: flex; flex-direction: column; gap: 20px; max-width: 500px; margin: 0 auto; padding: 10px;">
+                            <div class="payment-bill" style="background: var(--bg-card); padding: 18px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); width: 100%; box-sizing: border-box;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span class="bill-label" style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Selected Service</span>
+                                    <span class="bill-value" id="payment-service-name" style="font-weight: 700; color: var(--text-color); font-size: 13px;">PAN Card Registration</span>
                                 </div>
-                                <div class="bill-row total">
+                                <div class="bill-divider" style="height: 1px; background: var(--border-color); margin: 10px 0;"></div>
+                                <div class="bill-row" style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
+                                    <span style="color: var(--text-muted);">Operator Service Charge</span>
+                                    <span id="payment-fee-amount" style="font-weight: 600; color: var(--text-color);">₹150</span>
+                                </div>
+                                <div class="bill-row total" style="display: flex; justify-content: space-between; font-weight: 800; font-size: 16px; border-top: 1.5px dashed var(--border-color); padding-top: 10px; margin-top: 5px;">
                                     <span>Total Payable</span>
-                                    <span id="payment-fee-total">â‚¹150</span>
+                                    <span id="payment-fee-total" style="color: var(--primary);">₹150</span>
                                 </div>
                             </div>
-                            <div class="payment-options">
-                                <div class="payment-tabs">
-                                    <button type="button" class="pay-tab active" onclick="switchPayMethod('gateway')">Gateway Checkout (Cards/Netbanking/UPI)</button>
-                                    <button type="button" class="pay-tab" onclick="switchPayMethod('upi')">UPI (QR Scan)</button>
-                                    <button type="button" class="pay-tab" onclick="switchPayMethod('upi-intent')">UPI ID / Apps</button>
-                                </div>
-                                <!-- Gateway Checkout Panel -->
-                                <div class="pay-panel active" id="pay-panel-gateway">
-                                    <div class="gateway-checkout-box" style="padding: 30px; text-align: center; border: 1.5px dashed var(--border-color); border-radius: var(--radius-md); background: var(--bg-app); margin-top: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;">
-                                        <div class="gateway-icon" style="font-size: 36px; animation: pulse 2s infinite;">ðŸ”’</div>
-                                        <h4 style="margin: 0; color: var(--text-color); font-size: 16px; font-weight: 700;">Secure Cashfree PG Checkout</h4>
-                                        <p style="font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; max-width: 320px;">Complete payment via Credit/Debit Cards, Netbanking, direct UPI, or Wallets securely.</p>
-                                        <button type="button" class="btn btn-success" onclick="payViaCashfreeGateway()" style="width: 100%; padding: 12px; font-weight: 700; font-size: 14px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px;">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                                            Redirect to Secure Checkout
-                                        </button>
+                            
+                            <div class="payment-options-manual" style="width: 100%;">
+                                <!-- Active Payment Details and QR Code Card -->
+                                <div id="upi-qr-payment-container" class="upi-qr-box" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--bg-card); padding: 25px 20px; border-radius: var(--radius-md); border: 1.5px solid var(--border-color); box-sizing: border-box; gap: 15px; width: 100%;">
+                                    <div class="upi-payee-info" style="text-align: center;">
+                                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); letter-spacing: 0.8px; margin-bottom: 4px; text-transform: uppercase;">Payee Merchant</div>
+                                        <div id="upi-payee-display-name" style="font-weight: 800; font-size: 16px; color: var(--text-color);">SUCCESS MP ONLINE</div>
                                     </div>
-                                </div>
-                                <!-- UPI QR Panel -->
-                                <div class="pay-panel" id="pay-panel-upi">
-                                    <div class="upi-qr-box">
-                                        <div class="upi-panel-head">
-                                            <span>Scan and Pay</span>
-                                            <strong id="upi-pay-amount">â‚¹150</strong>
-                                        </div>
-                                        <div class="paytm-qr-card">
-                                            <div class="paytm-qr-container">
-                                                <img src="assets/paytm_qr.jpg" alt="Paytm QR Code" class="paytm-qr-bg" />
-                                                <img src="" alt="Dynamic UPI QR Code" class="paytm-qr-dynamic" id="paytm-qr-dynamic-image" />
-                                            </div>
-                                            <p class="qr-scan-hint">PhonePe, GPay, Paytm or any UPI app</p>
-                                        </div>
-                                        <div class="upi-instructions">
-                                            <div class="spinner small inline-spinner"></div>
-                                            <span>Waiting for payment detection...</span>
-                                        </div>
+                                    
+                                    <div class="qr-code-wrapper" style="padding: 10px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.06); display: flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; position: relative;">
+                                        <img id="upi-payment-qr" src="assets/paytm_qr.jpg" alt="UPI QR Code — paytmqr6wi94q@ptys" style="width: 230px; height: auto; display: block; object-fit: contain; border-radius: 8px;" />
                                     </div>
+                                    
+                                    <div class="upi-vpa-details" style="text-align: center; background: var(--bg-app); padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border-color); display: inline-flex; align-items: center; gap: 6px; max-width: 90%;">
+                                        <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">UPI ID:</span>
+                                        <strong id="upi-id-display-text" style="font-size: 13px; color: var(--text-color); font-weight: 700; word-break: break-all;">paytmqr6wi94q@ptys</strong>
+                                    </div>
+                                    
+                                    <p class="qr-scan-hint" style="font-size: 12.5px; color: var(--text-muted); margin: 0; text-align: center; line-height: 1.5; max-width: 320px;">
+                                        Scan this QR using any UPI app (Google Pay, PhonePe, Paytm) to complete your payment.
+                                    </p>
+                                    
+                                    <button type="button" class="btn btn-success" id="whatsapp-confirm-btn" onclick="handleWhatsAppConfirmation()" style="background-color: #25d366; border-color: #25d366; color: #ffffff; font-weight: 700; font-size: 14.5px; width: 100%; padding: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(37, 211, 102, 0.2); border: none; margin-top: 10px;">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.5-5.739-1.451L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.625 1.45 5.5.003 9.961-4.456 9.964-9.957.001-2.664-1.034-5.168-2.915-7.051C16.43 1.71 13.931.675 11.267.674 5.766.674 1.3 5.138 1.297 10.638c-.001 1.554.432 3.1 1.282 4.471L1.587 22.39l7.29-1.916c.8.4 1.62.61 2.45.61a9.92 9.92 0 0 0 4.62-1.46c-1.6.95-3.18 1.45-4.63 1.45z"/></svg>
+                                        👉 I Have Paid – Confirm on WhatsApp
+                                    </button>
                                 </div>
-                                <!-- UPI ID / App Intent Panel -->
-                                <div class="pay-panel" id="pay-panel-upi-intent">
-                                    <div class="upi-intent-form">
-                                        <div class="form-group">
-                                            <label for="upi-id-input">Enter Your UPI ID</label>
-                                            <div class="upi-input-wrapper">
-                                                <input type="text" id="upi-id-input" placeholder="e.g. name@paytm, name@ybl" oninput="clearUpiFeedback()" />
-                                                <span class="upi-validation-badge" id="upi-validation-badge"></span>
-                                            </div>
-                                            <div class="upi-feedback-message" id="upi-feedback-message"></div>
+                                
+                                <!-- After-Click Success Confirmation Card -->
+                                <div id="payment-sent-success-card" class="payment-sent-card hidden" style="padding: 30px 24px; text-align: center; border: 1.5px solid #10b981; border-radius: var(--radius-md); background: #f0fdf4; margin-top: 15px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; transition: all 0.3s ease;">
+                                    <div class="success-alert-icon" style="width: 50px; height: 50px; border-radius: 50%; background: #d1fae5; display: flex; align-items: center; justify-content: center; color: #10b981; font-size: 24px; font-weight: bold;">
+                                        ✓
+                                    </div>
+                                    <h4 style="margin: 0; color: #065f46; font-size: 18px; font-weight: 800; letter-spacing: -0.2px;">Verification Sent!</h4>
+                                    <p style="font-size: 13.5px; color: #047857; margin: 0; line-height: 1.5; max-width: 340px;">
+                                        Your payment request has been received. Receipt will be sent to your email after manual verification by our operator.
+                                    </p>
+                                    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px; width: 100%; border-top: 1px solid #a7f3d0; padding-top: 14px;">
+                                        <div style="font-size: 12px; color: #065f46; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                                            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: #059669; animation: pulse 1.5s infinite;"></span>
+                                            Payment request sent
                                         </div>
-                                        
-                                        <div class="upi-apps-section">
-                                            <label>Or Pay Directly via App</label>
-                                            <div class="upi-apps-grid">
-                                                <button type="button" class="upi-app-btn" onclick="payViaUpiApp('gpay')">
-                                                    <div class="upi-app-icon gpay"></div>
-                                                    <span>Google Pay</span>
-                                                </button>
-                                                <button type="button" class="upi-app-btn" onclick="payViaUpiApp('phonepe')">
-                                                    <div class="upi-app-icon phonepe"></div>
-                                                    <span>PhonePe</span>
-                                                </button>
-                                                <button type="button" class="upi-app-btn" onclick="payViaUpiApp('paytm')">
-                                                    <div class="upi-app-icon paytm"></div>
-                                                    <span>Paytm</span>
-                                                </button>
-                                                <button type="button" class="upi-app-btn" onclick="payViaUpiApp('bhim')">
-                                                    <div class="upi-app-icon bhim"></div>
-                                                    <span>BHIM</span>
-                                                </button>
-                                                <button type="button" class="upi-app-btn" onclick="payViaUpiApp('other')">
-                                                    <div class="upi-app-icon other"></div>
-                                                    <span>Any UPI App</span>
-                                                </button>
-                                            </div>
+                                        <div style="font-size: 12px; color: #374151; font-weight: 500;">
+                                            ⏳ Wait for admin verification
+                                        </div>
+                                        <div style="font-size: 11.5px; color: #6b7280; font-weight: 500;">
+                                            📧 Receipt will be sent to email
                                         </div>
                                     </div>
+                                    <button type="button" class="btn btn-primary" onclick="trackFromReceipt()" style="margin-top: 10px; width: 100%; padding: 10px; font-size: 13px; font-weight: 600;">
+                                        Track Application Status
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                        <!-- Processing overlay during simulation -->
-                        <div id="payment-processing" class="payment-processing-overlay hidden">
-                            <div class="spinner"></div>
-                            <h4 id="payment-processing-title">Verifying Transaction...</h4>
-                            <p id="payment-processing-desc">Please do not refresh or press back button.</p>
-                        </div>
-                        <div class="panel-actions">
-                            <button type="button" class="btn btn-secondary" onclick="wizardPrev(4)">Back</button>
-                            <button type="button" class="btn btn-success" id="payment-submit-btn" onclick="handlePaymentSubmit()">Complete Payment & Submit</button>
+                        
+                        <div class="panel-actions" style="margin-top: 25px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; justify-content: flex-start;">
+                            <button type="button" class="btn btn-secondary" onclick="wizardPrev(4)" id="payment-back-btn">Back</button>
                         </div>
                     </div>
                 </form>
